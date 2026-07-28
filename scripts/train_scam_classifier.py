@@ -127,6 +127,7 @@ def main():
         hub_model_id=hub_model_id,
         hub_token=hf_token,
         hub_private_repo=True,
+        fp16=torch.cuda.is_available(), # Massively speeds up training on T4 GPUs
     )
 
     trainer = Trainer(
