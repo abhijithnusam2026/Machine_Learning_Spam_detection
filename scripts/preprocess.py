@@ -55,7 +55,7 @@ if __name__ == "__main__":
             
             # Using tanu320 as the default username as inferred.
             # Users can change this in the script if needed.
-            repo_id = "tanu320/scam-alert-dataset"
+            repo_id = "tanu011235/scam-alert-dataset"
             dataset.push_to_hub(repo_id, token=hf_token)
             print(f"Successfully pushed dataset to https://huggingface.co/datasets/{repo_id}")
         except Exception as e:
