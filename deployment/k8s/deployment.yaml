@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: call-center-serving
+  labels:
+    app: call-center-intelligence
+    component: serving
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: call-center-intelligence
+      component: serving
+  template:
+    metadata:
+      labels:
+        app: call-center-intelligence
+        component: serving
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
+    spec:
+      containers:
+        - name: serving
+          image: call-center-intel-serving:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http-api
+              containerPort: 8000
+            - name: vllm
+              containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: call-center-serving-config
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: huggingface-token
+                  key: token
+                  optional: true
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: "24Gi"
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-api
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 8
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http-api
+            initialDelaySeconds: 180
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /models/huggingface
+            - name: model-artifacts
+              mountPath: /models/artifacts
+              readOnly: true
+      volumes:
+        - name: hf-cache
+          emptyDir:
+            sizeLimit: 30Gi
+        - name: model-artifacts
+          hostPath:
+            path: /var/local/call-center-intelligence/artifacts
+            type: DirectoryOrCreate

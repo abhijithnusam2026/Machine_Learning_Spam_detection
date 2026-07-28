@@ -1,0 +1,47 @@
+"""
+Run predictions with your fine-tuned scam classifier.
+
+Usage:
+    python predict_scam.py --model_dir ./scam-classifier-model --text "You won a free prize!"
+"""
+
+import argparse
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+
+def get_device():
+    if torch.backends.mps.is_available():
+        return "mps"
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_dir", type=str, required=True)
+    parser.add_argument("--text", type=str, required=True)
+    args = parser.parse_args()
+
+    device = get_device()
+    tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
+    model = AutoModelForSequenceClassification.from_pretrained(args.model_dir)
+    model.to(device)
+    model.eval()
+
+    inputs = tokenizer(args.text, return_tensors="pt", truncation=True, max_length=256).to(device)
+    with torch.no_grad():
+        logits = model(**inputs).logits
+        probs = torch.softmax(logits, dim=-1)[0]
+
+    label = "SCAM" if probs[1] > probs[0] else "LEGIT"
+    confidence = probs.max().item()
+
+    print(f"Text: {args.text}")
+    print(f"Prediction: {label} (confidence: {confidence:.2%})")
+    print(f"  Legit prob: {probs[0]:.2%} | Scam prob: {probs[1]:.2%}")
+
+
+if __name__ == "__main__":
+    main()

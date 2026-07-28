@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: call-center-serving-config
+  labels:
+    app: call-center-intelligence
+data:
+  MODEL_NAME: "Qwen/Qwen2.5-1.5B-Instruct"
+  SERVED_MODEL_NAME: "call-center-qwen25"
+  LORA_ADAPTER_PATH: ""
+  VLLM_BASE_URL: "http://127.0.0.1:8001/v1"
+  DTYPE: "float16"
+  QUANTIZATION: ""
+  GPU_MEMORY_UTILIZATION: "0.85"
+  MAX_MODEL_LEN: "4096"
+  TENSOR_PARALLEL_SIZE: "1"
+  REQUEST_TIMEOUT_SECONDS: "60"
+  MAX_SUMMARY_TOKENS: "180"
+  MAX_INTENT_TOKENS: "16"

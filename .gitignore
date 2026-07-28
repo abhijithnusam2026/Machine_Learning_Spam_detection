@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ML data and artifacts
+data/raw/*
+data/processed/*
+data/synthetic/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/synthetic/.gitkeep
+checkpoints/
+artifacts/
+models/
+outputs/
+runs/
+wandb/
+mlruns/
+lightning_logs/
+
+# Model files
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.gguf
+
+# Logs and profiling
+*.log
+logs/
+profile/
+tensorboard/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Docker/Kubernetes local state
+.docker/
+kubeconfig*
