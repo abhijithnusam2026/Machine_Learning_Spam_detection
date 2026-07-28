@@ -126,6 +126,7 @@ def main():
         push_to_hub=push_to_hub,
         hub_model_id=hub_model_id,
         hub_token=hf_token,
+        hub_private_repo=True,
     )
 
     trainer = Trainer(
@@ -161,7 +162,7 @@ def main():
     if push_to_hub:
         print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")
         # Ensure it is pushed privately to respect the data privacy proposal
-        trainer.push_to_hub(private=True)
+        trainer.push_to_hub()
         print("Model successfully pushed to Hugging Face Hub as a PRIVATE repository!")
 
 
