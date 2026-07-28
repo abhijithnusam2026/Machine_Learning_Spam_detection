@@ -144,10 +144,6 @@ def main():
     print("Confusion Matrix:")
     print(cm)
     
-    # Simulate Source Breakdown Metrics (as requested by proposal)
-    print("\nMetrics by Source (Simulated Breakdown):")
-    print("Source: Mobile | Accuracy: {:.4f} | F1: {:.4f}".format(metrics['eval_accuracy']*0.98, metrics['eval_f1']*0.97))
-    print("Source: Web    | Accuracy: {:.4f} | F1: {:.4f}".format(metrics['eval_accuracy']*1.02, metrics['eval_f1']*1.01))
 
 
     # 7. Save final model + tokenizer
