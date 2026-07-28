@@ -27,6 +27,14 @@ class SummarizeResponse(BaseModel):
     model: str
     latency_ms: float
 
+class ScamDetectionResponse(BaseModel):
+    call_id: str | None
+    is_scam: bool
+    confidence: float
+    model: str
+    latency_ms: float
+
+
 
 class IntentResponse(BaseModel):
     call_id: str | None

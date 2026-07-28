@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import AsyncIterator
 
 import httpx
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from fastapi import FastAPI, HTTPException
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
@@ -23,6 +25,7 @@ from src.serving.schemas import (
     IntentResponse,
     ReadinessResponse,
     SummarizeResponse,
+    ScamDetectionResponse,
     TranscriptRequest,
 )
 from src.serving.vllm_client import VLLMClient, normalize_intent
@@ -33,6 +36,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = load_config()
     app.state.config = config
     app.state.vllm_client = VLLMClient(config)
+    
+    # Load DistilBERT model for scam detection if available
+    app.state.scam_model = None
+    app.state.scam_tokenizer = None
+    app.state.device = "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        model_dir = "scam-classifier-model"
+        app.state.scam_tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        app.state.scam_model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+        app.state.scam_model.to(app.state.device)
+        app.state.scam_model.eval()
+        print("Scam detection model loaded.")
+    except Exception as e:
+        print(f"Warning: Could not load DistilBERT scam model: {e}")
+
     try:
         yield
     finally:
@@ -107,6 +125,33 @@ async def summarize(request: TranscriptRequest) -> SummarizeResponse:
         summary=result.text,
         model=config.model_name,
         latency_ms=result.latency_ms,
+    )
+
+
+@app.post("/detect-scam", response_model=ScamDetectionResponse)
+async def detect_scam(request: TranscriptRequest) -> ScamDetectionResponse:
+    if app.state.scam_model is None:
+        raise HTTPException(status_code=503, detail="Scam detection model not loaded.")
+    
+    start_time = time.perf_counter()
+    inputs = app.state.scam_tokenizer(
+        request.transcript, return_tensors="pt", truncation=True, max_length=256
+    ).to(app.state.device)
+    
+    with torch.no_grad():
+        logits = app.state.scam_model(**inputs).logits
+        probs = torch.softmax(logits, dim=-1)[0]
+    
+    is_scam = bool(probs[1] > probs[0])
+    confidence = float(probs.max().item())
+    latency_ms = (time.perf_counter() - start_time) * 1000
+    
+    return ScamDetectionResponse(
+        call_id=request.call_id,
+        is_scam=is_scam,
+        confidence=confidence,
+        model="distilbert-scam-classifier",
+        latency_ms=latency_ms,
     )
 
 
