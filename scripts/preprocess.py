@@ -44,3 +44,21 @@ if __name__ == "__main__":
         preprocess_dataset(raw_test, proc_test)
     else:
         print(f"Warning: {raw_test} not found.")
+
+    # Push to Hugging Face Hub if token is available
+    hf_token = os.environ.get("HF_TOKEN")
+    if hf_token:
+        try:
+            from datasets import load_dataset
+            print("\nPushing processed dataset to Hugging Face Hub...")
+            dataset = load_dataset("csv", data_files={"train": proc_train, "test": proc_test})
+            
+            # Using tanu320 as the default username as inferred.
+            # Users can change this in the script if needed.
+            repo_id = "tanu320/scam-alert-dataset"
+            dataset.push_to_hub(repo_id, token=hf_token)
+            print(f"Successfully pushed dataset to https://huggingface.co/datasets/{repo_id}")
+        except Exception as e:
+            print(f"Failed to push to Hugging Face Hub: {e}")
+    else:
+        print("\nSkipping Hugging Face upload: HF_TOKEN not found in environment variables.")

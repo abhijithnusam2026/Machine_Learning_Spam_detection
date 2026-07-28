@@ -26,16 +26,23 @@ Pre-trained models (zero-shot) lack the domain-specific vocabulary to reliably f
 
 ## Quick Start (Training & Inference)
 
-1. Setup environment and add `KAGGLE_API_TOKEN` to `.env`.
-2. Download and Preprocess:
+1. Setup environment and add your tokens to `.env`:
+   ```bash
+   KAGGLE_API_TOKEN="KGAT_..."
+   HF_TOKEN="hf_..." # Hugging Face Token with Write permissions
+   ```
+2. Download, Preprocess, and Sync to Hugging Face Hub:
    ```bash
    python scripts/download.py
    python scripts/preprocess.py
    ```
-3. Train the model:
+   *(If `HF_TOKEN` is set, `preprocess.py` will push the dataset to `tanu320/scam-alert-dataset`)*
+
+3. Train the model and Push to Hub:
    ```bash
    python scripts/train_scam_classifier.py --data data/processed/composite_train.csv
    ```
+   *(If `HF_TOKEN` is set, the finalized model is pushed to `tanu320/distilbert-scam-classifier`)*
 4. Serve the API locally:
    ```bash
    uvicorn src.serving.app:app --host 0.0.0.0 --port 8000

@@ -11,6 +11,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import torch
+import os
 from datasets import Dataset
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
@@ -87,6 +88,10 @@ def main():
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
+    hf_token = os.environ.get("HF_TOKEN")
+    push_to_hub = bool(hf_token)
+    hub_model_id = "tanu320/distilbert-scam-classifier" if push_to_hub else None
+
     # 4. Training config
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -101,6 +106,9 @@ def main():
         metric_for_best_model="f1",
         logging_steps=20,
         report_to="none",
+        push_to_hub=push_to_hub,
+        hub_model_id=hub_model_id,
+        hub_token=hf_token,
     )
 
     trainer = Trainer(
@@ -123,7 +131,12 @@ def main():
     # 7. Save final model + tokenizer
     trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
-    print(f"Model saved to {args.output_dir}")
+    print(f"Model saved locally to {args.output_dir}")
+
+    if push_to_hub:
+        print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")
+        trainer.push_to_hub()
+        print("Model successfully pushed to Hugging Face Hub!")
 
 
 if __name__ == "__main__":
