@@ -31,9 +31,12 @@ async def lifespan(app: FastAPI):
         app.state.scam_model = AutoModelForSequenceClassification.from_pretrained(model_dir)
         app.state.scam_model.to(app.state.device)
         app.state.scam_model.eval()
-        print("Scam detection model loaded.")
+        print("Scam detection model loaded successfully.")
     except Exception as e:
-        print(f"Warning: Could not load DistilBERT scam model: {e}")
+        print(f"CRITICAL ERROR: Failed to load DistilBERT scam model from '{model_dir}'.")
+        print(f"Ensure you have trained the model using scripts/train_scam_classifier.py")
+        # Raise the exception so the container crashes loudly instead of silently failing later.
+        raise RuntimeError(f"Model load failure: {e}") from e
 
     yield
 

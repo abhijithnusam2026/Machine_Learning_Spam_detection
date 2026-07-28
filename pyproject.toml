@@ -1,5 +1,5 @@
 [project]
-name = "call-center-intelligence-system"
+name = "distilbert-scam-classifier"
 version = "0.1.0"
 description = "End-to-end ML system for call transcript summarization, intent classification, optimization, serving, deployment, and monitoring."
 readme = "README.md"
@@ -9,32 +9,18 @@ authors = [
   { name = "Tanishq" }
 ]
 dependencies = [
-  "accelerate==1.2.1",
-  "bitsandbytes==0.45.0",
-  "datasets==3.2.0",
-  "evaluate==0.4.3",
-  "fastapi==0.115.6",
-  "grafana-api==1.0.3",
-  "httpx==0.28.1",
-  "numpy==1.26.4",
-  "onnx==1.17.0",
-  "onnxruntime==1.20.1",
-  "optimum==1.23.3",
-  "pandas==2.2.3",
-  "peft==0.14.0",
-  "prometheus-client==0.21.1",
-  "pydantic==2.10.4",
-  "python-dotenv==1.0.1",
-  "rouge-score==0.1.2",
-  "scikit-learn==1.6.0",
-  "sentence-transformers==3.3.1",
-  "torch==2.5.1",
-  "transformers==4.47.1",
-  "tqdm==4.67.1",
-  "trl==0.13.0",
-  "uvicorn==0.34.0",
-  "vllm==0.6.6.post1",
-  "wandb==0.19.1"
+  "datasets>=3.2.0",
+  "fastapi>=0.115.6",
+  "httpx>=0.28.1",
+  "lightgbm>=4.3.0",
+  "numpy>=1.26.4",
+  "pandas>=2.2.3",
+  "pydantic>=2.10.4",
+  "python-dotenv>=1.0.1",
+  "scikit-learn>=1.6.0",
+  "torch>=2.2.0",
+  "transformers>=4.40.0",
+  "uvicorn>=0.34.0"
 ]
 
 [project.optional-dependencies]
