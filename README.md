@@ -1,17 +1,15 @@
-# End-to-End Call Center Security & Intelligence System
+# Scam Alert System
 
-An end-to-end Machine Learning system for automated scam transcript detection, call summarization, and intent classification. This project integrates lightweight NLP models for rapid inference alongside Large Language Models (LLMs) deployed on optimized infrastructure. 
+An end-to-end Machine Learning system for automated scam transcript detection. This project utilizes lightweight NLP models for rapid inference on constrained hardware.
 
----
+## Objective
 
-## Part 1: Scam Alert System (College Project)
-
-**Objective**: Detect malicious or fraudulent intents in call transcripts and messages to protect users from financial and identity-related scams.
+Detect malicious or fraudulent intents in call transcripts and messages to protect users from financial and identity-related scams.
 
 We built a **Scam Alert System** utilizing a lightweight transformer architecture. The goal is to provide rapid, privacy-conscious alerts when suspicious patterns (urgency, credential requests, impersonation) are identified.
 
 ### Methodology
-- **Exploratory Data Analysis (EDA)**: Analyzed the `composite-scam-transcript-dataset` for text lengths, class imbalances, and keyword frequencies.
+- **Exploratory Data Analysis (EDA)**: Analyzed the `composite-scam-transcript-dataset` for text lengths, class imbalances, and keyword frequencies (see `notebooks/03a_EDA_DistilBERT.ipynb`).
 - **Baseline Modeling**: Initially benchmarked using TF-IDF + Logistic Regression. 
 - **Fine-Tuning**: Fine-tuned a **DistilBERT** (`distilbert-base-uncased`) sequence classification model. By using DistilBERT, we retain 97% of BERT's language understanding while being 60% faster and 40% smaller—ideal for mobile or edge inference.
 
@@ -20,57 +18,25 @@ Pre-trained models (zero-shot) lack the domain-specific vocabulary to reliably f
 
 *(See `notebooks/04_fine_tuning_justification.ipynb` for empirical comparisons between baseline and fine-tuned models).*
 
----
+## Data Pipeline
 
-## Part 2: Advanced MLOps & LLM Serving (Resume & Production System)
+1. **Ingestion**: Audio is passed through a Speech-to-Text module (like Whisper, see `src/serving/asr.py`).
+2. **Download**: Raw data is pulled via `scripts/download.py`.
+3. **Preprocess**: Text is cleaned and saved to `data/processed/` using `scripts/preprocess.py`.
 
-To extend the security system into a full **Call Center Intelligence System**, we process legitimate calls for summarization, intent extraction, and analytics using massive LLMs.
+## Quick Start (Training & Inference)
 
-### Architecture Flow
-
-1. **Ingestion & ASR**: Raw audio calls are processed through a Speech-to-Text module (like Whisper, see `src/serving/asr.py` placeholder) to generate text transcripts.
-2. **Training & Optimization Pipeline**: Synthetic dialogue data is preprocessed into instruction records, which are fed into a distributed QLoRA fine-tuning process for models like Qwen2.5-1.5B-Instruct or Llama-3.2-3B-Instruct. 
-3. **Serving Layer (FastAPI)**: 
-   - **`/detect-scam`**: Synchronously routes to the lightweight DistilBERT model.
-   - **`/summarize` & `/classify-intent`**: Asynchronously routes to a high-performance **vLLM** backend, optimizing continuous batching and PagedAttention for the LLM on multiple GPUs.
-4. **Monitoring & Maintenance**: Prometheus metrics are scraped from the FastAPI gateway and visualized in Grafana. A scheduled background job computes cosine distance on SentenceTransformer embeddings of incoming transcripts against a training baseline, triggering alerts for data drift.
-
-### Infrastructure & Deployment
-- **Lambda Labs GPU Compute**: Scripts provided to rapidly provision multi-GPU environments (see `docs/lambda_labs_setup.md`).
-- **Containerization**: Fully containerized using Docker, with Kubernetes manifests ready for horizontal pod autoscaling.
-- **Model Compression**: The adapter weights are merged and quantized (INT8/FP16), allowing large models to fit into constrained GPU memory without sacrificing classification accuracy.
-
----
-
-## Setup & Execution
-
-### 1. Local Environment
-Environment configuration requires Python 3.10+ and CUDA-enabled hardware for model training and serving.
-
-```bash
-# Clone the repository and configure the virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install the package with development and GPU dependencies
-pip install -e ".[dev,gpu]"
-
-# Set up environment variables
-cp .env.example .env
-```
-
-### 2. Run the Dual-Endpoint Server
-```bash
-# Start the FastAPI gateway 
-uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
-```
-
-## Repository Structure
-
-- `configs/`: Hyperparameter sweeps and Grafana dashboard definitions.
-- `data/`: Raw and processed transcripts, synthetic data.
-- `deployment/`: Dockerfiles and Kubernetes manifests for the serving layer.
-- `docs/`: Lambda Labs setup, training guides, and system design docs.
-- `notebooks/`: EDA (`03_interim_project_report.ipynb`) and Fine-Tuning Justifications (`04_fine_tuning_justification.ipynb`).
-- `scripts/`: Executable entrypoints for DistilBERT training, QLoRA tuning, quantization, and drift detection.
-- `src/`: Core Python modules (`data`, `training`, `serving`, `optimization`, `monitoring`).
+1. Setup environment and add `KAGGLE_API_TOKEN` to `.env`.
+2. Download and Preprocess:
+   ```bash
+   python scripts/download.py
+   python scripts/preprocess.py
+   ```
+3. Train the model:
+   ```bash
+   python scripts/train_scam_classifier.py --data data/processed/composite_train.csv
+   ```
+4. Serve the API locally:
+   ```bash
+   uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
+   ```
