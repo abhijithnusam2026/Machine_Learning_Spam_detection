@@ -1,14 +1,23 @@
 import os
+import sys
 import kagglehub
 import shutil
 import json
 import datetime
 
+raw_dir = "data/raw"
+metadata_path = os.path.join(raw_dir, "metadata.json")
+
+# Idempotency check
+if os.path.exists(metadata_path):
+    print(f"Dataset metadata found at {metadata_path}. Skipping download to avoid breaking data provenance.")
+    print("If you need to re-download, delete the data/raw/ directory first.")
+    sys.exit(0)
+
 # Download the dataset
 print("Downloading dataset from Kaggle...")
 path = kagglehub.dataset_download("ibrahimbagwan12/composite-scam-transcript-dataset")
 
-raw_dir = "data/raw"
 os.makedirs(raw_dir, exist_ok=True)
 
 # The path contains the downloaded files. We move them to the raw directory.

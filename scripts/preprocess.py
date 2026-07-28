@@ -1,4 +1,6 @@
 import os
+import sys
+import argparse
 import pandas as pd
 import re
 from sklearn.model_selection import train_test_split
@@ -7,6 +9,8 @@ def clean_text(text):
     if pd.isna(text):
         return ""
     text = str(text)
+    # Strip leading/trailing artifact quotes before deduplication
+    text = text.strip("\"'")
     # Basic cleaning: remove extra whitespace
     text = re.sub(r'\s+', ' ', text).strip()
     return text
@@ -36,8 +40,8 @@ def preprocess_and_split(raw_train_path, raw_test_path, proc_train_path, proc_te
     
     print(f"Total raw rows (train + test): {len(df_all)}")
     
-    # 1. Clean Text
-    print("Cleaning text data...")
+    # 1. Clean Text (including quote stripping)
+    print("Cleaning text data and stripping quote artifacts...")
     df_all['text'] = df_all['text'].apply(clean_text)
     df_all = df_all[df_all['text'] != ""]
     
@@ -48,7 +52,16 @@ def preprocess_and_split(raw_train_path, raw_test_path, proc_train_path, proc_te
     
     # 3. Label Noise Fix
     print("Auditing provenance and fixing label noise (benign misclassifications)...")
+    original_labels = df_all['label'].copy()
     df_all['label'] = df_all.apply(fix_label_noise, axis=1)
+    
+    flipped = df_all[original_labels != df_all['label']]
+    print(f"Flipped {len(flipped)} rows heuristically based on benign keywords.")
+    if len(flipped) > 0:
+        print("\n--- SAMPLE OF 3 FLIPPED ROWS FOR SANITY CHECK ---")
+        for idx, row in flipped.sample(min(3, len(flipped)), random_state=42).iterrows():
+            print(f"Text snippet: {row['text'][:100]}...")
+        print("--------------------------------------------------\n")
     
     # 4. Stratified Train/Test Split (85/15)
     print("Re-splitting dataset securely...")
@@ -65,30 +78,36 @@ def preprocess_and_split(raw_train_path, raw_test_path, proc_train_path, proc_te
     print(f"Saved processed test dataset to {proc_test_path} (Rows: {len(df_test_clean)})")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--push_to_hub", action="store_true", help="Push dataset to Hugging Face Hub privately")
+    args = parser.parse_args()
+
     raw_train = "data/raw/composite_train.csv"
     raw_test = "data/raw/composite_test.csv"
     
     proc_train = "data/processed/composite_train.csv"
     proc_test = "data/processed/composite_test.csv"
     
-    if os.path.exists(raw_train) and os.path.exists(raw_test):
-        preprocess_and_split(raw_train, raw_test, proc_train, proc_test)
-    else:
-        print(f"Warning: Raw data files not found in data/raw/. Please run download.py first.")
+    if not (os.path.exists(raw_train) and os.path.exists(raw_test)):
+        print(f"ERROR: Raw data files not found in data/raw/. Please run download.py first.")
+        sys.exit(1)
+        
+    preprocess_and_split(raw_train, raw_test, proc_train, proc_test)
 
-    # Push to Hugging Face Hub if token is available
-    hf_token = os.environ.get("HF_TOKEN")
-    if hf_token:
-        try:
-            from datasets import load_dataset
-            print("\nPushing processed dataset to Hugging Face Hub (Private Repo)...")
-            dataset = load_dataset("csv", data_files={"train": proc_train, "test": proc_test})
-            
-            # Using private=True to adhere to the proposal's privacy constraints
-            repo_id = "tanu011235/scam-alert-dataset"
-            dataset.push_to_hub(repo_id, token=hf_token, private=True)
-            print(f"Successfully pushed PRIVATE dataset to https://huggingface.co/datasets/{repo_id}")
-        except Exception as e:
-            print(f"Failed to push to Hugging Face Hub: {e}")
-    else:
-        print("\nSkipping Hugging Face upload: HF_TOKEN not found in environment variables.")
+    # Push to Hugging Face Hub ONLY if explicitly requested
+    if args.push_to_hub:
+        hf_token = os.environ.get("HF_TOKEN")
+        if hf_token:
+            try:
+                from datasets import load_dataset
+                print("\nPushing processed dataset to Hugging Face Hub (Private Repo)...")
+                dataset = load_dataset("csv", data_files={"train": proc_train, "test": proc_test})
+                repo_id = "tanu011235/scam-alert-dataset"
+                dataset.push_to_hub(repo_id, token=hf_token, private=True)
+                print(f"Successfully pushed PRIVATE dataset to https://huggingface.co/datasets/{repo_id}")
+            except Exception as e:
+                print(f"Failed to push to Hugging Face Hub: {e}")
+                sys.exit(1)
+        else:
+            print("\nERROR: --push_to_hub used but HF_TOKEN not found in environment variables.")
+            sys.exit(1)

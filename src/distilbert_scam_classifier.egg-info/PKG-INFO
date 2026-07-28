@@ -1,0 +1,83 @@
+Metadata-Version: 2.1
+Name: distilbert-scam-classifier
+Version: 0.1.0
+Summary: End-to-end ML system for call transcript summarization, intent classification, optimization, serving, deployment, and monitoring.
+Author: Tanishq
+License: MIT
+Requires-Python: <3.12,>=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: datasets>=3.2.0
+Requires-Dist: fastapi>=0.115.6
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: lightgbm>=4.3.0
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: pandas>=2.2.3
+Requires-Dist: pydantic>=2.10.4
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: scikit-learn>=1.6.0
+Requires-Dist: torch>=2.2.0
+Requires-Dist: transformers>=4.40.0
+Requires-Dist: uvicorn>=0.34.0
+Provides-Extra: dev
+Requires-Dist: black==24.10.0; extra == "dev"
+Requires-Dist: ipykernel==6.29.5; extra == "dev"
+Requires-Dist: isort==5.13.2; extra == "dev"
+Requires-Dist: jupyterlab==4.3.4; extra == "dev"
+Requires-Dist: mypy==1.14.1; extra == "dev"
+Requires-Dist: pre-commit==4.0.1; extra == "dev"
+Requires-Dist: pytest==8.3.4; extra == "dev"
+Requires-Dist: pytest-asyncio==0.25.0; extra == "dev"
+Requires-Dist: ruff==0.8.4; extra == "dev"
+Provides-Extra: gpu
+Requires-Dist: auto-gptq==0.7.1; extra == "gpu"
+Requires-Dist: onnxruntime-gpu==1.20.1; extra == "gpu"
+
+# Scam Alert System
+
+An end-to-end Machine Learning system for automated scam transcript detection. This project utilizes lightweight NLP models for rapid inference on constrained hardware.
+
+## Objective
+
+Detect malicious or fraudulent intents in call transcripts and messages to protect users from financial and identity-related scams.
+
+We built a **Scam Alert System** utilizing a lightweight transformer architecture. The goal is to provide rapid, privacy-conscious alerts when suspicious patterns (urgency, credential requests, impersonation) are identified.
+
+### Methodology
+- **Exploratory Data Analysis (EDA)**: Analyzed the `composite-scam-transcript-dataset` for text lengths, class imbalances, and keyword frequencies (see `notebooks/03a_EDA_DistilBERT.ipynb`).
+- **Baseline Modeling**: Initially benchmarked using TF-IDF + Logistic Regression. 
+- **Fine-Tuning**: Fine-tuned a **DistilBERT** (`distilbert-base-uncased`) sequence classification model. By using DistilBERT, we retain 97% of BERT's language understanding while being 60% faster and 40% smaller—ideal for mobile or edge inference.
+
+### Why Fine-Tune?
+Pre-trained models (zero-shot) lack the domain-specific vocabulary to reliably flag novel scam structures. Fine-tuning our DistilBERT model on conversational scam transcripts improved our F1-score drastically over lexical baselines while maintaining sub-50ms inference latency on CPU, proving that lightweight contextual models outperform basic keyword matching without requiring massive GPU resources.
+
+*(See `notebooks/04_fine_tuning_justification.ipynb` for empirical comparisons between baseline and fine-tuned models).*
+
+## Data Pipeline
+
+1. **Ingestion**: Audio is passed through a Speech-to-Text module (like Whisper, see `src/serving/asr.py`).
+2. **Download**: Raw data is pulled via `scripts/download.py`.
+3. **Preprocess**: Text is cleaned and saved to `data/processed/` using `scripts/preprocess.py`.
+
+## Quick Start (Training & Inference)
+
+1. Setup environment and add your tokens to `.env`:
+   ```bash
+   KAGGLE_API_TOKEN="KGAT_..."
+   HF_TOKEN="hf_..." # Hugging Face Token with Write permissions
+   ```
+2. Download, Preprocess, and Sync to Hugging Face Hub:
+   ```bash
+   python scripts/download.py
+   python scripts/preprocess.py
+   ```
+   *(If `HF_TOKEN` is set, `preprocess.py` will push the dataset to `tanu320/scam-alert-dataset`)*
+
+3. Train the model and Push to Hub:
+   ```bash
+   python scripts/train_scam_classifier.py --data data/processed/composite_train.csv
+   ```
+   *(If `HF_TOKEN` is set, the finalized model is pushed to `tanu320/distilbert-scam-classifier`)*
+4. Serve the API locally:
+   ```bash
+   uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
+   ```

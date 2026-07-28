@@ -2,9 +2,7 @@
 Fine-tune DistilBERT to classify text as scam (1) or legit (0).
 
 Usage:
-    python train_scam_classifier.py --data scam_data.csv
-
-Expects a CSV with two columns: "text" and "label" (0/1).
+    python train_scam_classifier.py --train_data train.csv --test_data test.csv
 """
 
 import argparse
@@ -12,8 +10,8 @@ import numpy as np
 import pandas as pd
 import torch
 import os
+import random
 from datasets import Dataset
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, average_precision_score, confusion_matrix
 from transformers import (
     AutoTokenizer,
@@ -21,6 +19,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorWithPadding,
+    set_seed,
 )
 
 
@@ -52,32 +51,37 @@ def compute_metrics(eval_pred):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=str, required=True, help="Path to CSV with text,label columns")
+    parser.add_argument("--train_data", type=str, required=True, help="Path to train CSV")
+    parser.add_argument("--test_data", type=str, required=True, help="Path to test CSV")
     parser.add_argument("--model_name", type=str, default="distilbert-base-uncased")
     parser.add_argument("--output_dir", type=str, default="./scam-classifier-model")
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--push_to_hub", action="store_true", help="Push model to Hugging Face Hub privately")
     args = parser.parse_args()
+
+    # Enforce strict reproducibility
+    seed = 42
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    set_seed(seed)  # Transformers set_seed
 
     device = get_device()
     print(f"Using device: {device}")
 
-    # 1. Load and split data
-    df = pd.read_csv(args.data)
+    # 1. Load data
+    train_df = pd.read_csv(args.train_data)
+    test_df = pd.read_csv(args.test_data)
     
-    # If standard composite dataset doesn't have exactly text/label, adapt here.
-    if "transcript" in df.columns and "is_scam" in df.columns:
-        df = df.rename(columns={"transcript": "text", "is_scam": "label"})
-    
-    assert "text" in df.columns and "label" in df.columns, "CSV must have 'text' and 'label' columns"
-
-    train_df, val_df = train_test_split(
-        df, test_size=0.15, random_state=42, stratify=df["label"]
-    )
+    assert "text" in train_df.columns and "label" in train_df.columns, "Train CSV must have 'text' and 'label' columns"
+    assert "text" in test_df.columns and "label" in test_df.columns, "Test CSV must have 'text' and 'label' columns"
 
     train_ds = Dataset.from_pandas(train_df.reset_index(drop=True))
-    val_ds = Dataset.from_pandas(val_df.reset_index(drop=True))
+    val_ds = Dataset.from_pandas(test_df.reset_index(drop=True))
 
     # 2. Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -96,8 +100,13 @@ def main():
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
+    push_to_hub = args.push_to_hub
     hf_token = os.environ.get("HF_TOKEN")
-    push_to_hub = bool(hf_token)
+    if push_to_hub and not hf_token:
+        print("ERROR: --push_to_hub requested but HF_TOKEN environment variable not set.")
+        import sys
+        sys.exit(1)
+
     hub_model_id = "tanu011235/distilbert-scam-classifier" if push_to_hub else None
 
     # 4. Training config
@@ -134,7 +143,7 @@ def main():
 
     # 6. Evaluate
     metrics = trainer.evaluate()
-    print("Final validation metrics:", metrics)
+    print("Final evaluation metrics on test set:", metrics)
     
     # Generate Confusion Matrix
     print("\n--- Detailed Evaluation ---")
@@ -143,8 +152,6 @@ def main():
     cm = confusion_matrix(val_ds["label"], preds)
     print("Confusion Matrix:")
     print(cm)
-    
-
 
     # 7. Save final model + tokenizer
     trainer.save_model(args.output_dir)
