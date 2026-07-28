@@ -90,7 +90,7 @@ def main():
 
     hf_token = os.environ.get("HF_TOKEN")
     push_to_hub = bool(hf_token)
-    hub_model_id = "tanu320/distilbert-scam-classifier" if push_to_hub else None
+    hub_model_id = "tanu011235/distilbert-scam-classifier" if push_to_hub else None
 
     # 4. Training config
     training_args = TrainingArguments(
