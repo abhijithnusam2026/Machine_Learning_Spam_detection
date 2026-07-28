@@ -26,13 +26,14 @@ Pre-trained models (zero-shot) lack the domain-specific vocabulary to reliably f
 
 To extend the security system into a full **Call Center Intelligence System**, we process legitimate calls for summarization, intent extraction, and analytics using massive LLMs.
 
-### Architecture
+### Architecture Flow
 
-1. **Training & Optimization Pipeline**: Synthetic dialogue data is preprocessed into instruction records, which are fed into a distributed QLoRA fine-tuning process for models like Qwen2.5-1.5B-Instruct or Llama-3.2-3B-Instruct. 
-2. **Serving Layer (FastAPI)**: 
+1. **Ingestion & ASR**: Raw audio calls are processed through a Speech-to-Text module (like Whisper, see `src/serving/asr.py` placeholder) to generate text transcripts.
+2. **Training & Optimization Pipeline**: Synthetic dialogue data is preprocessed into instruction records, which are fed into a distributed QLoRA fine-tuning process for models like Qwen2.5-1.5B-Instruct or Llama-3.2-3B-Instruct. 
+3. **Serving Layer (FastAPI)**: 
    - **`/detect-scam`**: Synchronously routes to the lightweight DistilBERT model.
    - **`/summarize` & `/classify-intent`**: Asynchronously routes to a high-performance **vLLM** backend, optimizing continuous batching and PagedAttention for the LLM on multiple GPUs.
-3. **Monitoring & Maintenance**: Prometheus metrics are scraped from the FastAPI gateway and visualized in Grafana. A scheduled background job computes cosine distance on SentenceTransformer embeddings of incoming transcripts against a training baseline, triggering alerts for data drift.
+4. **Monitoring & Maintenance**: Prometheus metrics are scraped from the FastAPI gateway and visualized in Grafana. A scheduled background job computes cosine distance on SentenceTransformer embeddings of incoming transcripts against a training baseline, triggering alerts for data drift.
 
 ### Infrastructure & Deployment
 - **Lambda Labs GPU Compute**: Scripts provided to rapidly provision multi-GPU environments (see `docs/lambda_labs_setup.md`).

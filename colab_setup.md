@@ -24,14 +24,15 @@ To run the training for the DistilBERT Scam Classifier on Google Colab (to utili
    ```
    *Note: If you run the download script provided in the repository, it will automatically use this token.*
    ```bash
-   !python data/raw/download.py
+   !python scripts/download.py
+   !python scripts/preprocess.py
    ```
 
-5. **Run the Training Script**
+5. **Run the Training Script (Phase 1)**
    Ensure the notebook's runtime type is set to **T4 GPU** (Runtime -> Change runtime type -> Hardware accelerator: GPU).
    
    ```bash
-   !python scripts/train_scam_classifier.py --data data/raw/composite_train.csv --output_dir ./scam-classifier-model --epochs 4 --batch_size 16
+   !python scripts/train_scam_classifier.py --data data/processed/composite_train.csv --output_dir ./scam-classifier-model --epochs 4 --batch_size 16
    ```
 
 6. **Test the Model**

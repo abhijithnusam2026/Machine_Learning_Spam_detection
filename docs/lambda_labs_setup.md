@@ -45,10 +45,11 @@ Activate your environment:
 source .venv/bin/activate
 ```
 
-**To Train the Scam Classifier:**
+**To Train the Scam Classifier (Phase 1 - College Project):**
 ```bash
-python data/raw/download.py
-python scripts/train_scam_classifier.py --data data/raw/composite_train.csv --output_dir ./scam-classifier-model --epochs 4 --batch_size 16
+python scripts/download.py
+python scripts/preprocess.py
+python scripts/train_scam_classifier.py --data data/processed/composite_train.csv --output_dir ./scam-classifier-model --epochs 4 --batch_size 16
 ```
 
 **To Start the Dual-Endpoint API:**
