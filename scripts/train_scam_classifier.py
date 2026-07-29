@@ -151,9 +151,28 @@ def main():
     print("\n--- Detailed Evaluation ---")
     predictions = trainer.predict(val_ds)
     preds = np.argmax(predictions.predictions, axis=-1)
-    cm = confusion_matrix(val_ds["label"], preds)
+    y_true = np.array(val_ds["label"])
+    cm = confusion_matrix(y_true, preds)
     print("Confusion Matrix:")
     print(cm)
+    
+    print("\n--- Stratified Context-Length Evaluation ---")
+    # Calculate true token lengths
+    def token_len(text):
+        return len(tokenizer.encode(str(text), truncation=False))
+        
+    test_df["token_count"] = test_df["text"].apply(token_len)
+    long_mask = test_df["token_count"] > 512
+    short_mask = ~long_mask
+    
+    if short_mask.sum() > 0:
+        acc_short = accuracy_score(y_true[short_mask], preds[short_mask])
+        print(f"DistilBERT accuracy, short transcripts (≤ 512 tokens): {acc_short:.2%} (N={short_mask.sum()})")
+    
+    if long_mask.sum() > 0:
+        acc_long = accuracy_score(y_true[long_mask], preds[long_mask])
+        print(f"DistilBERT accuracy, long transcripts (> 512 tokens): {acc_long:.2%} (N={long_mask.sum()})")
+
 
     # 7. Save final model + tokenizer
     trainer.save_model(args.output_dir)
