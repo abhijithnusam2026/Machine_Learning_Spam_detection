@@ -51,8 +51,8 @@ def compute_metrics(eval_pred):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_data", type=str, default="data/raw/v2_composite_train.csv", help="Path to train CSV")
-    parser.add_argument("--test_data", type=str, default="data/raw/v2_composite_test.csv", help="Path to test CSV")
+    parser.add_argument("--train_data", type=str, default="data/train.csv", help="Path to train CSV")
+    parser.add_argument("--test_data", type=str, default="data/test.csv", help="Path to test CSV")
     parser.add_argument("--model_name", type=str, default="distilbert-base-uncased")
     parser.add_argument("--output_dir", type=str, default="./scam-classifier-model")
     parser.add_argument("--epochs", type=int, default=4)

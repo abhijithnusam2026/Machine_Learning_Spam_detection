@@ -16,8 +16,8 @@ import lightgbm as lgb
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_data", type=str, default="data/raw/v2_composite_train.csv", help="Path to processed train CSV")
-    parser.add_argument("--test_data", type=str, default="data/raw/v2_composite_test.csv", help="Path to processed test CSV")
+    parser.add_argument("--train_data", type=str, default="data/train.csv", help="Path to processed train CSV")
+    parser.add_argument("--test_data", type=str, default="data/test.csv", help="Path to processed test CSV")
     args = parser.parse_args()
 
     # Enforce reproducibility
