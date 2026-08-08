@@ -139,9 +139,10 @@ def main():
     legacy_train_scams = legacy_scams_full.iloc[:850]
     legacy_train_legits = legacy_legits_full.iloc[:850]
     
-    # We need 2000 Scams / 1000 Legits for Test (to pair with 1000 Teeconnie Legits)
+    # We need 2000 Scams / (2000 - len(teeconnie_test)) Legits for Test (to perfectly balance 2000 scams)
+    needed_legacy_legits_for_test = 2000 - len(teeconnie_test)
     legacy_test_scams = legacy_scams_full.iloc[850:2850]
-    legacy_test_legits = legacy_legits_full.iloc[850:1850]
+    legacy_test_legits = legacy_legits_full.iloc[850:850+needed_legacy_legits_for_test]
     
     print(f"Sampled Legacy Train Data: {len(legacy_train_scams)} Scams, {len(legacy_train_legits)} Legits.")
     print(f"Sampled Legacy Test Data: {len(legacy_test_scams)} Scams, {len(legacy_test_legits)} Legits.")
