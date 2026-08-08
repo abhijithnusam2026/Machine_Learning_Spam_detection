@@ -7,6 +7,7 @@ This yields a perfectly balanced 850-row dataset for training.
 import os
 import json
 import random
+import re
 import pandas as pd
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
@@ -64,6 +65,19 @@ def main():
     df_all = pd.concat([df_synth, aix_df], ignore_index=True)
     df_all = df_all.dropna(subset=["text", "label"]).reset_index(drop=True)
     df_all["label"] = df_all["label"].astype(int)
+    
+    print("Scrubbing structural formatting leakage...")
+    def clean_text(text):
+        text = str(text)
+        # Remove Innocent/Suspect tags from JSONs
+        text = re.sub(r'(?i)(innocent|suspect):\s*', '', text)
+        # Remove template brackets [Greetings], [Name], etc from Kaggle
+        text = re.sub(r'\[.*?\]', '', text)
+        # Remove multiple spaces and lowercase everything to unify texture
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text.lower()
+        
+    df_all["text"] = df_all["text"].apply(clean_text)
     
     # Simple deduplication just in case
     df_all = df_all.drop_duplicates(subset=["text"], keep="first")
