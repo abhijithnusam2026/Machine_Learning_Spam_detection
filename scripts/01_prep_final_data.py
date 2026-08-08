@@ -11,6 +11,9 @@ import re
 import pandas as pd
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
+from dotenv import load_dotenv
+
+load_dotenv()
 
 SEED = 42
 random.seed(SEED)
@@ -95,7 +98,25 @@ def main():
     os.makedirs("data", exist_ok=True)
     train_df.to_csv("data/train.csv", index=False)
     test_df.to_csv("data/test.csv", index=False)
-    print("\nSaved robust merged datasets to data/train.csv and data/test.csv")
+    print("\nSaved locally temporarily.")
+    
+    # Upload to DagsHub Data Storage
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    
+    if repo_owner and repo_name:
+        print(f"\nUploading datasets directly to DagsHub ({repo_owner}/{repo_name})...")
+        try:
+            from dagshub.upload import Repo
+            repo = Repo(repo_owner, repo_name)
+            repo.upload(file="data/train.csv", path="data/train.csv", commit_message="Update train dataset via pipeline")
+            repo.upload(file="data/test.csv", path="data/test.csv", commit_message="Update test dataset via pipeline")
+            print("Successfully uploaded to DagsHub!")
+        except Exception as e:
+            print(f"Failed to upload to DagsHub: {e}")
+            print("Make sure you are logged in using `dagshub login`")
+    else:
+        print("DAGSHUB_REPO_OWNER or DAGSHUB_REPO_NAME not found in .env. Skipping cloud upload.")
 
 if __name__ == "__main__":
     main()

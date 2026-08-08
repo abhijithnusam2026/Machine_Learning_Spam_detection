@@ -12,6 +12,8 @@ import torch
 import os
 import random
 import mlflow
+import requests
+from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -79,7 +81,33 @@ def main():
     device = get_device()
     print(f"Using device: {device}")
 
+    # 0. Download data from DagsHub if needed
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    username = os.getenv("MLFLOW_TRACKING_USERNAME")
+    password = os.getenv("MLFLOW_TRACKING_PASSWORD")
+    
+    if repo_owner and repo_name and username and password:
+        print(f"Fetching latest datasets from DagsHub ({repo_owner}/{repo_name})...")
+        auth = HTTPBasicAuth(username, password)
+        os.makedirs("data", exist_ok=True)
+        
+        for file in [args.train_data, args.test_data]:
+            url = f"https://dagshub.com/{repo_owner}/{repo_name}/raw/main/{file}"
+            print(f"Downloading {file}...")
+            resp = requests.get(url, auth=auth)
+            if resp.status_code == 200:
+                with open(file, "wb") as f:
+                    f.write(resp.content)
+            else:
+                print(f"Warning: Failed to download {file} (Status {resp.status_code}). Will try to use local copy if it exists.")
+
     # 1. Load data
+    if not os.path.exists(args.train_data) or not os.path.exists(args.test_data):
+        print("ERROR: Datasets not found locally and failed to download from DagsHub.")
+        import sys
+        sys.exit(1)
+        
     train_df = pd.read_csv(args.train_data)
     test_df = pd.read_csv(args.test_data)
     
@@ -158,43 +186,55 @@ def main():
         metrics = trainer.evaluate()
         print("Final evaluation metrics on test set:", metrics)
     
-    # Generate Confusion Matrix
-    print("\n--- Detailed Evaluation ---")
-    predictions = trainer.predict(val_ds)
-    preds = np.argmax(predictions.predictions, axis=-1)
-    y_true = np.array(val_ds["label"])
-    cm = confusion_matrix(y_true, preds)
-    print("Confusion Matrix:")
-    print(cm)
-    
-    print("\n--- Stratified Context-Length Evaluation ---")
-    # Calculate true token lengths
-    def token_len(text):
-        return len(tokenizer.encode(str(text), truncation=False))
+        # Generate Confusion Matrix
+        print("\n--- Detailed Evaluation ---")
+        predictions = trainer.predict(val_ds)
+        preds = np.argmax(predictions.predictions, axis=-1)
+        y_true = np.array(val_ds["label"])
+        cm = confusion_matrix(y_true, preds)
+        print("Confusion Matrix:")
+        print(cm)
         
-    test_df["token_count"] = test_df["text"].apply(token_len)
-    long_mask = test_df["token_count"] > 8192
-    short_mask = ~long_mask
-    
-    if short_mask.sum() > 0:
-        acc_short = accuracy_score(y_true[short_mask], preds[short_mask])
-        print(f"ModernBERT accuracy, short transcripts (≤ 8192 tokens): {acc_short:.2%} (N={short_mask.sum()})")
-    
-    if long_mask.sum() > 0:
-        acc_long = accuracy_score(y_true[long_mask], preds[long_mask])
-        print(f"ModernBERT accuracy, long transcripts (> 8192 tokens): {acc_long:.2%} (N={long_mask.sum()})")
+        print("\n--- Stratified Context-Length Evaluation ---")
+        # Calculate true token lengths
+        def token_len(text):
+            return len(tokenizer.encode(str(text), truncation=False))
+            
+        test_df["token_count"] = test_df["text"].apply(token_len)
+        long_mask = test_df["token_count"] > 8192
+        short_mask = ~long_mask
+        
+        if short_mask.sum() > 0:
+            acc_short = accuracy_score(y_true[short_mask], preds[short_mask])
+            print(f"ModernBERT accuracy, short transcripts (≤ 8192 tokens): {acc_short:.2%} (N={short_mask.sum()})")
+        
+        if long_mask.sum() > 0:
+            acc_long = accuracy_score(y_true[long_mask], preds[long_mask])
+            print(f"ModernBERT accuracy, long transcripts (> 8192 tokens): {acc_long:.2%} (N={long_mask.sum()})")
 
 
-    # 7. Save final model + tokenizer
-    trainer.save_model(args.output_dir)
-    tokenizer.save_pretrained(args.output_dir)
-    print(f"Model saved locally to {args.output_dir}")
+        # 7. Save final model + tokenizer
+        trainer.save_model(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+        print(f"Model saved locally to {args.output_dir}")
+        
+        # 8. Log the model to DagsHub MLflow
+        print("Uploading model weights to DagsHub MLflow registry...")
+        components = {
+            "model": trainer.model,
+            "tokenizer": tokenizer,
+        }
+        mlflow.transformers.log_model(
+            transformers_model=components,
+            artifact_path="modernbert-scam-classifier"
+        )
+        print("Model successfully uploaded to DagsHub!")
 
-        if push_to_hub:
-            print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")
-            # Ensure it is pushed privately to respect the data privacy proposal
-            trainer.push_to_hub()
-            print("Model successfully pushed to Hugging Face Hub as a PRIVATE repository!")
+    if push_to_hub:
+        print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")
+        # Ensure it is pushed privately to respect the data privacy proposal
+        trainer.push_to_hub()
+        print("Model successfully pushed to Hugging Face Hub as a PRIVATE repository!")
 
 
 if __name__ == "__main__":

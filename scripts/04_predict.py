@@ -7,6 +7,9 @@ Usage:
 
 import argparse
 import torch
+import os
+import mlflow
+from dotenv import load_dotenv
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 
@@ -19,15 +22,32 @@ def get_device():
 
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_dir", type=str, default="./scam-classifier-model", help="Path to local model OR Hugging Face repo ID (e.g. tanu011235/modernbert-scam-classifier)")
+    parser.add_argument("--model_dir", type=str, default="mlflow", help="Path to local model, Hugging Face repo ID, or 'mlflow' to pull latest from DagsHub")
     parser.add_argument("--text", type=str, required=True)
     args = parser.parse_args()
 
     device = get_device()
-    # Note: If your HF repo is private, you must run `huggingface-cli login` first or set HF_TOKEN in your environment.
-    tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
-    model = AutoModelForSequenceClassification.from_pretrained(args.model_dir)
+    
+    if args.model_dir == "mlflow":
+        print("Fetching latest model from DagsHub MLflow registry...")
+        mlflow.set_experiment("modernbert-scam-detection")
+        runs = mlflow.search_runs(order_by=["start_time DESC"], max_results=1)
+        if len(runs) == 0:
+            print("ERROR: No runs found in MLflow. Please train the model first.")
+            return
+        run_id = runs.iloc[0].run_id
+        print(f"Loading model from run: {run_id}")
+        
+        model_uri = f"runs:/{run_id}/modernbert-scam-classifier"
+        pipeline = mlflow.transformers.load_model(model_uri, return_type="components")
+        model = pipeline["model"]
+        tokenizer = pipeline["tokenizer"]
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
+        model = AutoModelForSequenceClassification.from_pretrained(args.model_dir)
+        
     model.to(device)
     model.eval()
 
