@@ -98,17 +98,42 @@ def main():
             entries = [e.strip() for e in content.split("\n") if e.strip()]
     
     random.shuffle(entries)
-    aix_samples = entries[:350]
+    aix_samples = entries[:350]  # Balances 75 synth legits to reach 425 total legits
     
     aix_df = pd.DataFrame({
         "text": aix_samples,
         "label": [0] * len(aix_samples)
     })
     
-    print(f"Sampled {len(aix_samples)} legitimate transcripts.")
+    print(f"Sampled {len(aix_samples)} legitimate transcripts from Teeconnie.")
 
-    print("\nMerging datasets...")
-    df_all = pd.concat([df_synth, aix_df], ignore_index=True)
+    # Download legacy dataset
+    print("\nDownloading Legacy Kaggle composite dataset from DagsHub S3...")
+    csv1 = "data/legacy_composite/composite_train.csv"
+    csv2 = "data/legacy_composite/composite_test.csv"
+    os.makedirs("data/legacy_composite", exist_ok=True)
+    
+    try:
+        s3_client.download_file(repo_name, csv1, csv1)
+        s3_client.download_file(repo_name, csv2, csv2)
+        df1 = pd.read_csv(csv1)
+        df2 = pd.read_csv(csv2)
+        df_legacy_full = pd.concat([df1, df2], ignore_index=True)
+    except Exception as e:
+        print(f"ERROR: Failed to download legacy datasets from S3: {e}")
+        return
+
+    # Stratified sampling of Legacy Dataset (1:2 Ratio)
+    # We have 850 High-Quality rows (425 scams, 425 legits). 
+    # We want 1700 Legacy rows (850 scams, 850 legits).
+    df_legacy_scams = df_legacy_full[df_legacy_full["label"] == 1].sample(850, random_state=SEED)
+    df_legacy_legits = df_legacy_full[df_legacy_full["label"] == 0].sample(850, random_state=SEED)
+    df_legacy = pd.concat([df_legacy_scams, df_legacy_legits], ignore_index=True)
+
+    print(f"Sampled {len(df_legacy)} stratified rows from the Legacy Composite dataset.")
+
+    print("\nMerging all datasets (Synthetic + Teeconnie + Legacy)...")
+    df_all = pd.concat([df_synth, aix_df, df_legacy], ignore_index=True)
     df_all = df_all.dropna(subset=["text", "label"]).reset_index(drop=True)
     df_all["label"] = df_all["label"].astype(int)
     
