@@ -11,6 +11,7 @@ import pandas as pd
 import torch
 import os
 import random
+import mlflow
 from datasets import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, average_precision_score, confusion_matrix
 from transformers import (
@@ -122,7 +123,7 @@ def main():
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         logging_steps=20,
-        report_to="none",
+        report_to="mlflow",
         push_to_hub=push_to_hub,
         hub_model_id=hub_model_id,
         hub_token=hf_token,
@@ -141,11 +142,16 @@ def main():
     )
 
     # 5. Train
-    trainer.train()
+    print("Starting MLflow run to log datasets and metrics...")
+    mlflow.set_experiment("modernbert-scam-detection")
+    with mlflow.start_run():
+        mlflow.log_artifact(args.train_data, "dataset")
+        mlflow.log_artifact(args.test_data, "dataset")
+        trainer.train()
 
-    # 6. Evaluate
-    metrics = trainer.evaluate()
-    print("Final evaluation metrics on test set:", metrics)
+        # 6. Evaluate
+        metrics = trainer.evaluate()
+        print("Final evaluation metrics on test set:", metrics)
     
     # Generate Confusion Matrix
     print("\n--- Detailed Evaluation ---")
@@ -179,11 +185,11 @@ def main():
     tokenizer.save_pretrained(args.output_dir)
     print(f"Model saved locally to {args.output_dir}")
 
-    if push_to_hub:
-        print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")
-        # Ensure it is pushed privately to respect the data privacy proposal
-        trainer.push_to_hub()
-        print("Model successfully pushed to Hugging Face Hub as a PRIVATE repository!")
+        if push_to_hub:
+            print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")
+            # Ensure it is pushed privately to respect the data privacy proposal
+            trainer.push_to_hub()
+            print("Model successfully pushed to Hugging Face Hub as a PRIVATE repository!")
 
 
 if __name__ == "__main__":
