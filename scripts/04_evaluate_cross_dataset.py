@@ -48,6 +48,9 @@ def load_legacy_data():
 
 def main():
     load_dotenv()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_dir", type=str, default="./scam-classifier-model", help="Path to model directory or 'mlflow' to pull from DagsHub")
+    args = parser.parse_args()
     
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
     password = os.getenv("MLFLOW_TRACKING_PASSWORD")
@@ -61,8 +64,8 @@ def main():
         
     if repo_owner and repo_name:
         dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
-        # CRITICAL FIX: Force MLflow's internal boto3 client to route to DagsHub S3 instead of AWS
-        os.environ["MLFLOW_S3_ENDPOINT_URL"] = f"https://dagshub.com/{repo_owner}/{repo_name}.s3"
+        os.environ["MLFLOW_S3_ENDPOINT_URL"] = "https://dagshub.com"
+        os.environ["MLFLOW_S3_IGNORE_TLS"] = "true"
         os.environ["AWS_ACCESS_KEY_ID"] = username
         os.environ["AWS_SECRET_ACCESS_KEY"] = password
         
@@ -83,22 +86,26 @@ def main():
     texts = df["text"].astype(str).tolist()
     true_labels = df["label"].astype(int).tolist()
     
-    # 2. Load Model from DagsHub MLflow (or local)
-    print("Fetching latest model from DagsHub MLflow registry...")
-    mlflow.set_experiment("modernbert-scam-detection")
-    runs = mlflow.search_runs(order_by=["start_time DESC"], max_results=1)
-    
-    if len(runs) > 0:
-        run_id = runs.iloc[0].run_id
-        print(f"Loading model from run: {run_id}")
-        model_uri = f"runs:/{run_id}/modernbert-scam-classifier"
-        pipeline = mlflow.transformers.load_model(model_uri, return_type="components")
-        model = pipeline["model"]
-        tokenizer = pipeline["tokenizer"]
+    # 2. Load Model
+    if args.model_dir == "mlflow":
+        print("Fetching latest model from DagsHub MLflow registry...")
+        mlflow.set_experiment("modernbert-scam-detection")
+        runs = mlflow.search_runs(order_by=["start_time DESC"], max_results=1)
+        
+        if len(runs) > 0:
+            run_id = runs.iloc[0].run_id
+            print(f"Loading model from run: {run_id}")
+            model_uri = f"runs:/{run_id}/modernbert-scam-classifier"
+            pipeline = mlflow.transformers.load_model(model_uri, return_type="components")
+            model = pipeline["model"]
+            tokenizer = pipeline["tokenizer"]
+        else:
+            print("No runs found in MLflow. Please train first.")
+            return
     else:
-        print("No runs found in MLflow. Falling back to local model './scam-classifier-model'")
-        tokenizer = AutoTokenizer.from_pretrained("./scam-classifier-model")
-        model = AutoModelForSequenceClassification.from_pretrained("./scam-classifier-model")
+        print(f"Loading model locally from {args.model_dir}...")
+        tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
+        model = AutoModelForSequenceClassification.from_pretrained(args.model_dir)
         
     model.to(device)
     model.eval()
