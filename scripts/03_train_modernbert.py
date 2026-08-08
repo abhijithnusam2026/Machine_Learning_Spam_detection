@@ -229,9 +229,10 @@ def main():
         }
         mlflow.transformers.log_model(
             transformers_model=components,
-            artifact_path="modernbert-scam-classifier"
+            artifact_path="modernbert-scam-classifier",
+            registered_model_name="ModernBERT-Scam-Classifier"
         )
-        print("Model successfully uploaded to DagsHub!")
+        print("Model successfully registered to DagsHub Model Registry as 'ModernBERT-Scam-Classifier'!")
 
     if push_to_hub:
         print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")

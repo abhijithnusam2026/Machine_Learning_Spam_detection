@@ -90,17 +90,17 @@ def main():
     if args.model_dir == "mlflow":
         print("Fetching latest model from DagsHub MLflow registry...")
         mlflow.set_experiment("modernbert-scam-detection")
-        runs = mlflow.search_runs(order_by=["start_time DESC"], max_results=1)
         
-        if len(runs) > 0:
-            run_id = runs.iloc[0].run_id
-            print(f"Loading model from run: {run_id}")
-            model_uri = f"runs:/{run_id}/modernbert-scam-classifier"
+        # Load directly from the Model Registry instead of searching for runs
+        model_uri = "models:/ModernBERT-Scam-Classifier/latest"
+        print(f"Loading model from registry: {model_uri}")
+        
+        try:
             pipeline = mlflow.transformers.load_model(model_uri, return_type="components")
             model = pipeline["model"]
             tokenizer = pipeline["tokenizer"]
-        else:
-            print("No runs found in MLflow. Please train first.")
+        except Exception as e:
+            print(f"ERROR: Failed to load model from registry ({e}). Please ensure you have trained and registered it.")
             return
     else:
         print(f"Loading model locally from {args.model_dir}...")
