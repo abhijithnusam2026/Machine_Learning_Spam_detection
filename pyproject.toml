@@ -10,9 +10,11 @@ authors = [
 ]
 dependencies = [
   "datasets>=3.2.0",
+  "dagshub>=0.3.32",
   "fastapi>=0.115.6",
   "httpx>=0.28.1",
   "lightgbm>=4.3.0",
+  "mlflow>=2.15.0",
   "numpy>=1.26.4",
   "pandas>=2.2.3",
   "pydantic>=2.10.4",

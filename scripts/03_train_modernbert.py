@@ -12,6 +12,11 @@ import torch
 import os
 import random
 import mlflow
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 from datasets import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, average_precision_score, confusion_matrix
 from transformers import (
