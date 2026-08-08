@@ -41,6 +41,10 @@ def main():
     if repo_owner and repo_name:
         import dagshub
         dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
+        # CRITICAL FIX: Force MLflow's internal boto3 client to route to DagsHub S3 instead of AWS
+        os.environ["MLFLOW_S3_ENDPOINT_URL"] = f"https://dagshub.com/{repo_owner}/{repo_name}.s3"
+        os.environ["AWS_ACCESS_KEY_ID"] = username
+        os.environ["AWS_SECRET_ACCESS_KEY"] = password
         
     device = get_device()
     
