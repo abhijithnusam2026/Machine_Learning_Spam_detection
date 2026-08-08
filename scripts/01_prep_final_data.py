@@ -60,11 +60,30 @@ def main():
 
     # We have 425 scams and 75 legits in the synthetic data.
     # We need 350 more legits to balance it to 425/425.
-    print("\nLoading teeconnie non-scam real-world dataset to pad the legit class...")
-    import kagglehub
+    print("\nDownloading teeconnie dataset from DagsHub...")
+    teeconnie_zip = "data/raw_teeconnie/teeconnie_dataset.zip"
+    os.makedirs("data/raw_teeconnie", exist_ok=True)
+    
+    if repo_owner and repo_name:
+        url = f"https://dagshub.com/{repo_owner}/{repo_name}/raw/main/{teeconnie_zip}"
+        resp = requests.get(url, auth=auth)
+        if resp.status_code == 200:
+            with open(teeconnie_zip, "wb") as f:
+                f.write(resp.content)
+        else:
+            print(f"ERROR: Failed to download {teeconnie_zip} from DagsHub (Status {resp.status_code})")
+            return
+    else:
+        print("ERROR: DAGSHUB_REPO_OWNER missing in .env")
+        return
+        
+    import zipfile
+    print("Unzipping teeconnie dataset...")
+    with zipfile.ZipFile(teeconnie_zip, 'r') as zipf:
+        zipf.extractall("data/raw_teeconnie/")
+        
     import glob
-    teeconnie_path = kagglehub.dataset_download("teeconnie/scam-and-non-scam-call-conversation-dataset")
-    teeconnie_files = glob.glob(teeconnie_path + "/**/*", recursive=True)
+    teeconnie_files = glob.glob("data/raw_teeconnie/**/*", recursive=True)
     nonscam_txt = [f for f in teeconnie_files if f.lower().endswith(".txt") and "non" in f.lower() and "scam" in f.lower()]
     
     entries = []

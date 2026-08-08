@@ -3,6 +3,7 @@ import requests
 import kagglehub
 import glob
 import shutil
+import zipfile
 from dotenv import load_dotenv
 
 def download_hf_json(url, output_path):
@@ -39,27 +40,38 @@ def main():
     download_hf_json("https://huggingface.co/datasets/tanu011235/spam/resolve/main/scam_call_transcripts_250_combined.json", json2)
     
     # 2. Legacy Composite (from Kaggle)
-    print("\nDownloading Kaggle dataset...")
+    print("\nDownloading Kaggle Composite dataset...")
     kaggle_path = kagglehub.dataset_download("ibrahimbagwan12/composite-scam-transcript-dataset")
-    print(f"Kaggle data downloaded to: {kaggle_path}")
-    
     csv1 = "data/legacy_composite/composite_train.csv"
     csv2 = "data/legacy_composite/composite_test.csv"
     os.makedirs("data/legacy_composite", exist_ok=True)
-    
-    # Copy from kaggle cache to our local data folder
     for f in glob.glob(kaggle_path + "/*.csv"):
         if "train" in f.lower():
             shutil.copy(f, csv1)
         elif "test" in f.lower():
             shutil.copy(f, csv2)
 
+    # 3. Teeconnie Kaggle Dataset
+    print("\nDownloading Kaggle teeconnie dataset...")
+    teeconnie_path = kagglehub.dataset_download("teeconnie/scam-and-non-scam-call-conversation-dataset")
+    teeconnie_zip = "data/raw_teeconnie/teeconnie_dataset.zip"
+    os.makedirs("data/raw_teeconnie", exist_ok=True)
+    
+    print(f"Zipping teeconnie dataset to {teeconnie_zip}...")
+    with zipfile.ZipFile(teeconnie_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(teeconnie_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                # Keep the folder structure inside the zip
+                arcname = os.path.relpath(file_path, teeconnie_path)
+                zipf.write(file_path, arcname)
+
     print("\n--- 2. Uploading to DagsHub ---")
     try:
         from dagshub.upload import Repo
         repo = Repo(repo_owner, repo_name)
         
-        for file in [json1, json2, csv1, csv2]:
+        for file in [json1, json2, csv1, csv2, teeconnie_zip]:
             if os.path.exists(file):
                 print(f"Uploading {file}...")
                 repo.upload(file=file, path=file, commit_message=f"Archive {file} from external source")
