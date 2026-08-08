@@ -10,6 +10,7 @@ import random
 import re
 import pandas as pd
 import requests
+import boto3
 from requests.auth import HTTPBasicAuth
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
@@ -32,26 +33,35 @@ def main():
     json_files = ["scam_call_hard_examples_250.json", "scam_call_transcripts_250_combined.json"]
     
     auth = HTTPBasicAuth(username, password) if username and password else None
+    
+    # Initialize boto3 S3 client for DagsHub
+    s3_client = None
+    if repo_owner and repo_name and username and password:
+        s3_client = boto3.client('s3',
+            endpoint_url=f"https://dagshub.com/{repo_owner}/{repo_name}.s3",
+            aws_access_key_id=username,
+            aws_secret_access_key=password
+        )
+        
     synth_data = []
     
     for fname in json_files:
         path = os.path.join(json_dir, fname)
-        # Download from DagsHub
-        if repo_owner and repo_name:
-            url = f"https://dagshub.com/{repo_owner}/{repo_name}/raw/main/data/raw_jsons/{fname}"
-            resp = requests.get(url, auth=auth)
-            if resp.status_code == 200:
-                with open(path, "wb") as f:
-                    f.write(resp.content)
-            else:
-                print(f"Warning: Failed to download {fname} from DagsHub (Status {resp.status_code})")
+        # Download from DagsHub S3 Bucket
+        if s3_client:
+            s3_key = f"data/raw_jsons/{fname}"
+            print(f"Downloading {s3_key} from DagsHub S3...")
+            try:
+                s3_client.download_file(repo_name, s3_key, path)
+            except Exception as e:
+                print(f"Warning: Failed to download {fname} from S3: {e}")
         
         if os.path.exists(path):
             with open(path, "r") as f:
                 data = json.load(f)
                 synth_data.extend(data)
         else:
-            print(f"ERROR: {path} not found locally or in DagsHub.")
+            print(f"ERROR: {path} not found locally or in DagsHub S3.")
             return
 
     df_synth = pd.DataFrame(synth_data)
@@ -60,21 +70,19 @@ def main():
 
     # We have 425 scams and 75 legits in the synthetic data.
     # We need 350 more legits to balance it to 425/425.
-    print("\nDownloading teeconnie dataset from DagsHub...")
+    print("\nDownloading teeconnie dataset from DagsHub S3...")
     teeconnie_zip = "data/raw_teeconnie/teeconnie_dataset.zip"
     os.makedirs("data/raw_teeconnie", exist_ok=True)
     
-    if repo_owner and repo_name:
-        url = f"https://dagshub.com/{repo_owner}/{repo_name}/raw/main/{teeconnie_zip}"
-        resp = requests.get(url, auth=auth)
-        if resp.status_code == 200:
-            with open(teeconnie_zip, "wb") as f:
-                f.write(resp.content)
-        else:
-            print(f"ERROR: Failed to download {teeconnie_zip} from DagsHub (Status {resp.status_code})")
+    if s3_client:
+        s3_key = "data/raw_teeconnie/teeconnie_dataset.zip"
+        try:
+            s3_client.download_file(repo_name, s3_key, teeconnie_zip)
+        except Exception as e:
+            print(f"ERROR: Failed to download {teeconnie_zip} from S3: {e}")
             return
     else:
-        print("ERROR: DAGSHUB_REPO_OWNER missing in .env")
+        print("ERROR: DagsHub S3 credentials missing in .env")
         return
         
     import zipfile

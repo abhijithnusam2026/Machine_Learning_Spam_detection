@@ -13,6 +13,7 @@ import os
 import random
 import mlflow
 import requests
+import boto3
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 
@@ -88,19 +89,20 @@ def main():
     password = os.getenv("MLFLOW_TRACKING_PASSWORD")
     
     if repo_owner and repo_name and username and password:
-        print(f"Fetching latest datasets from DagsHub ({repo_owner}/{repo_name})...")
-        auth = HTTPBasicAuth(username, password)
+        print(f"Fetching latest datasets from DagsHub S3 Bucket ({repo_owner}/{repo_name})...")
         os.makedirs("data", exist_ok=True)
         
-        for file in [args.train_data, args.test_data]:
-            url = f"https://dagshub.com/{repo_owner}/{repo_name}/raw/main/{file}"
-            print(f"Downloading {file}...")
-            resp = requests.get(url, auth=auth)
-            if resp.status_code == 200:
-                with open(file, "wb") as f:
-                    f.write(resp.content)
-            else:
-                print(f"Warning: Failed to download {file} (Status {resp.status_code}). Will try to use local copy if it exists.")
+        try:
+            s3_client = boto3.client('s3',
+                endpoint_url=f"https://dagshub.com/{repo_owner}/{repo_name}.s3",
+                aws_access_key_id=username,
+                aws_secret_access_key=password
+            )
+            for file in [args.train_data, args.test_data]:
+                print(f"Downloading {file} from S3...")
+                s3_client.download_file(repo_name, file, file)
+        except Exception as e:
+            print(f"Warning: Failed to download datasets from S3 ({e}). Will try to use local copy if it exists.")
 
     # 1. Load data
     if not os.path.exists(args.train_data) or not os.path.exists(args.test_data):
