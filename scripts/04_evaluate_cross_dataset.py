@@ -51,10 +51,16 @@ def main():
     
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
     password = os.getenv("MLFLOW_TRACKING_PASSWORD")
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    
     if username and password:
         os.environ["DAGSHUB_USER"] = username
         os.environ["DAGSHUB_TOKEN"] = password
         dagshub.auth.add_app_token(password)
+        
+    if repo_owner and repo_name:
+        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
         
     device = get_device()
     print(f"Using device: {device}")

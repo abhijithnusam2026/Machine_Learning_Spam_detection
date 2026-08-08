@@ -28,6 +28,20 @@ def main():
     parser.add_argument("--text", type=str, required=True)
     args = parser.parse_args()
 
+    # DagsHub Auth
+    username = os.environ.get("MLFLOW_TRACKING_USERNAME")
+    password = os.environ.get("MLFLOW_TRACKING_PASSWORD")
+    repo_owner = os.environ.get("DAGSHUB_REPO_OWNER")
+    repo_name = os.environ.get("DAGSHUB_REPO_NAME")
+    if username and password:
+        os.environ["DAGSHUB_USER"] = username
+        os.environ["DAGSHUB_TOKEN"] = password
+        import dagshub
+        dagshub.auth.add_app_token(password)
+    if repo_owner and repo_name:
+        import dagshub
+        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
+        
     device = get_device()
     
     if args.model_dir == "mlflow":

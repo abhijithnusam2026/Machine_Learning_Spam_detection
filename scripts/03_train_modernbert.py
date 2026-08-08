@@ -87,7 +87,13 @@ def main():
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
     password = os.getenv("MLFLOW_TRACKING_PASSWORD")
     
+    if username and password:
+        os.environ["DAGSHUB_USER"] = username
+        os.environ["DAGSHUB_TOKEN"] = password
+        dagshub.auth.add_app_token(password)
+        
     if repo_owner and repo_name:
+        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
         print(f"Fetching latest datasets from DagsHub S3 Bucket ({repo_owner}/{repo_name})...")
         os.makedirs("data", exist_ok=True)
         
