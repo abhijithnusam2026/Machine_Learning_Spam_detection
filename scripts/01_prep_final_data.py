@@ -149,8 +149,8 @@ def main():
         try:
             from dagshub.upload import Repo
             repo = Repo(repo_owner, repo_name)
-            repo.upload(file="data/train.csv", path="data/train.csv", commit_message="Update train dataset via pipeline")
-            repo.upload(file="data/test.csv", path="data/test.csv", commit_message="Update test dataset via pipeline")
+            repo.upload(local_path="data/train.csv", remote_path="data/train.csv", commit_message="Update train dataset via pipeline")
+            repo.upload(local_path="data/test.csv", remote_path="data/test.csv", commit_message="Update test dataset via pipeline")
             print("Successfully uploaded to DagsHub!")
         except Exception as e:
             print(f"Failed to upload to DagsHub: {e}")

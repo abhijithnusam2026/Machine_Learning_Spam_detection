@@ -74,7 +74,7 @@ def main():
         for file in [json1, json2, csv1, csv2, teeconnie_zip]:
             if os.path.exists(file):
                 print(f"Uploading {file}...")
-                repo.upload(file=file, path=file, commit_message=f"Archive {file} from external source")
+                repo.upload(local_path=file, remote_path=file, commit_message=f"Archive {file} from external source")
                 
         print("Upload complete! All historical datasets are now centralized in DagsHub.")
     except Exception as e:
