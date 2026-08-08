@@ -8,10 +8,11 @@ import os
 import json
 import random
 import re
+import glob
+import zipfile
 import pandas as pd
 import requests
 import dagshub
-from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
 
@@ -25,32 +26,40 @@ def main():
     repo_name = os.getenv("DAGSHUB_REPO_NAME")
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
     password = os.getenv("MLFLOW_TRACKING_PASSWORD")
-    
+
+    if not (repo_owner and repo_name):
+        print("ERROR: DAGSHUB_REPO_OWNER and DAGSHUB_REPO_NAME must be set in .env")
+        return
+
+    # Map MLflow credentials to DagsHub authentication
+    if username and password:
+        os.environ["DAGSHUB_USER"] = username
+        os.environ["DAGSHUB_TOKEN"] = password
+        dagshub.auth.add_app_token(password)
+
     print("Loading synthesized JSON data from DagsHub...")
     json_dir = "data/raw_jsons"
     os.makedirs(json_dir, exist_ok=True)
     json_files = ["scam_call_hard_examples_250.json", "scam_call_transcripts_250_combined.json"]
     
-    # Initialize dagshub S3 client
-    s3_client = None
-    if repo_owner and repo_name:
-        s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
+    # Initialize DagsHub S3 client
+    repo_id = f"{repo_owner}/{repo_name}"
+    s3_client = dagshub.get_repo_bucket_client(repo_id)
         
     synth_data = []
     
     for fname in json_files:
         path = os.path.join(json_dir, fname)
-        # Download from DagsHub S3 Bucket
-        if s3_client:
-            s3_key = f"data/raw_jsons/{fname}"
-            print(f"Downloading {s3_key} from DagsHub S3...")
-            try:
-                s3_client.download_file(repo_name, s3_key, path)
-            except Exception as e:
-                print(f"Warning: Failed to download {fname} from S3: {e}")
+        s3_key = f"data/raw_jsons/{fname}"
+        
+        print(f"Downloading {s3_key} from DagsHub S3...")
+        try:
+            s3_client.download_file(repo_name, s3_key, path)
+        except Exception as e:
+            print(f"Warning: Failed to download {fname} from S3: {e}")
         
         if os.path.exists(path):
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 synth_data.extend(data)
         else:
@@ -61,29 +70,22 @@ def main():
     print(f"Loaded {len(df_synth)} synthetic examples.")
     print("Synthetic label distribution:", df_synth["label"].value_counts().to_dict())
 
-    # We have 425 scams and 75 legits in the synthetic data.
-    # We need 350 more legits to balance it to 425/425.
+    # Download legitimate dataset
     print("\nDownloading teeconnie dataset from DagsHub S3...")
     teeconnie_zip = "data/raw_teeconnie/teeconnie_dataset.zip"
     os.makedirs("data/raw_teeconnie", exist_ok=True)
+    s3_key = "data/raw_teeconnie/teeconnie_dataset.zip"
     
-    if s3_client:
-        s3_key = "data/raw_teeconnie/teeconnie_dataset.zip"
-        try:
-            s3_client.download_file(repo_name, s3_key, teeconnie_zip)
-        except Exception as e:
-            print(f"ERROR: Failed to download {teeconnie_zip} from S3: {e}")
-            return
-    else:
-        print("ERROR: DagsHub S3 credentials missing in .env")
+    try:
+        s3_client.download_file(repo_name, s3_key, teeconnie_zip)
+    except Exception as e:
+        print(f"ERROR: Failed to download {teeconnie_zip} from S3: {e}")
         return
         
-    import zipfile
     print("Unzipping teeconnie dataset...")
     with zipfile.ZipFile(teeconnie_zip, 'r') as zipf:
         zipf.extractall("data/raw_teeconnie/")
         
-    import glob
     teeconnie_files = glob.glob("data/raw_teeconnie/**/*", recursive=True)
     nonscam_txt = [f for f in teeconnie_files if f.lower().endswith(".txt") and "non" in f.lower() and "scam" in f.lower()]
     
@@ -103,7 +105,7 @@ def main():
         "label": [0] * len(aix_samples)
     })
     
-    print(f"Sampled {len(aix_samples)} legitimate transcripts from Kaggle teeconnie dataset.")
+    print(f"Sampled {len(aix_samples)} legitimate transcripts.")
 
     print("\nMerging datasets...")
     df_all = pd.concat([df_synth, aix_df], ignore_index=True)
@@ -113,17 +115,12 @@ def main():
     print("Scrubbing structural formatting leakage...")
     def clean_text(text):
         text = str(text)
-        # Remove Innocent/Suspect tags from JSONs
         text = re.sub(r'(?i)(innocent|suspect):\s*', '', text)
-        # Remove template brackets [Greetings], [Name], etc from Kaggle
         text = re.sub(r'\[.*?\]', '', text)
-        # Remove multiple spaces and lowercase everything to unify texture
         text = re.sub(r'\s+', ' ', text).strip()
         return text.lower()
         
     df_all["text"] = df_all["text"].apply(clean_text)
-    
-    # Simple deduplication just in case
     df_all = df_all.drop_duplicates(subset=["text"], keep="first")
     
     print(f"Final combined dataset shape: {df_all.shape}")
@@ -142,22 +139,13 @@ def main():
     print("\nSaved locally temporarily.")
     
     # Upload to DagsHub Data Storage
-    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
-    repo_name = os.getenv("DAGSHUB_REPO_NAME")
-    
-    if repo_owner and repo_name:
-        print(f"\nUploading datasets directly to DagsHub ({repo_owner}/{repo_name})...")
-        try:
-            import dagshub
-            repo_id = f"{repo_owner}/{repo_name}"
-            dagshub.upload_files(repo_id, local_path="data/train.csv", remote_path="data/train.csv", bucket=True)
-            dagshub.upload_files(repo_id, local_path="data/test.csv", remote_path="data/test.csv", bucket=True)
-            print("Successfully uploaded to DagsHub Storage Bucket!")
-        except Exception as e:
-            print(f"Failed to upload to DagsHub: {e}")
-            print("Make sure you are logged in using `dagshub login`")
-    else:
-        print("DAGSHUB_REPO_OWNER or DAGSHUB_REPO_NAME not found in .env. Skipping cloud upload.")
+    print(f"\nUploading datasets directly to DagsHub ({repo_id})...")
+    try:
+        dagshub.upload_files(repo_id, local_path="data/train.csv", remote_path="data/train.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path="data/test.csv", remote_path="data/test.csv", bucket=True)
+        print("Successfully uploaded to DagsHub Storage Bucket!")
+    except Exception as e:
+        print(f"Failed to upload to DagsHub: {e}")
 
 if __name__ == "__main__":
     main()
