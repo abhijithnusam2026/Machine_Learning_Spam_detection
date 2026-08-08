@@ -154,7 +154,7 @@ def main():
 
     # 4. Training config
     # We use a small physical batch size + gradient accumulation to prevent CUDA OOM on 8192 tokens
-    physical_batch_size = 2
+    physical_batch_size = 1
     gradient_accumulation_steps = args.batch_size // physical_batch_size
     if gradient_accumulation_steps < 1:
         gradient_accumulation_steps = 1
@@ -167,6 +167,7 @@ def main():
         per_device_train_batch_size=physical_batch_size,
         per_device_eval_batch_size=physical_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
+        gradient_checkpointing=True,  # Crucial for 8192 max_length on 15GB GPUs
         num_train_epochs=args.epochs,
         weight_decay=0.01,
         load_best_model_at_end=True,
