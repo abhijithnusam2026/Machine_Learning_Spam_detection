@@ -25,12 +25,8 @@ env/
 .ipynb_checkpoints/
 
 # ML data and artifacts
-data/raw/*
-data/processed/*
-data/synthetic/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-!data/synthetic/.gitkeep
+data/*
+!data/.gitkeep
 checkpoints/
 artifacts/
 models/
