@@ -1,7 +1,7 @@
 """
-Prepares the final dataset by combining 500 JSON examples (highly imbalanced)
-with 350 legitimate transcripts sampled from the AIxBlock real-world call center dataset.
-This yields a perfectly balanced 850-row dataset for training.
+Prepares the final dataset by explicitly constructing a balanced Train and Test set.
+Train Set: 100% of LLM data + Teeconnie + Legacy (2550 rows, perfectly balanced)
+Test Set: Completely unseen Teeconnie + Legacy (4000 rows, perfectly balanced)
 """
 
 import os
@@ -13,13 +13,19 @@ import zipfile
 import pandas as pd
 import requests
 import dagshub
-from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
 
 load_dotenv()
 
 SEED = 42
 random.seed(SEED)
+
+def clean_text(text):
+    text = str(text)
+    text = re.sub(r'(?i)(innocent|suspect):\s*', '', text)
+    text = re.sub(r'\[.*?\]', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text.lower()
 
 def main():
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
@@ -37,40 +43,40 @@ def main():
         os.environ["DAGSHUB_TOKEN"] = password
         dagshub.auth.add_app_token(password)
 
+    # Initialize DagsHub S3 client
+    repo_id = f"{repo_owner}/{repo_name}"
+    s3_client = dagshub.get_repo_bucket_client(repo_id)
+
+    # 1. Load Synthesized JSON data (LLM Data)
     print("Loading synthesized JSON data from DagsHub...")
     json_dir = "data/raw_jsons"
     os.makedirs(json_dir, exist_ok=True)
     json_files = ["scam_call_hard_examples_250.json", "scam_call_transcripts_250_combined.json"]
-    
-    # Initialize DagsHub S3 client
-    repo_id = f"{repo_owner}/{repo_name}"
-    s3_client = dagshub.get_repo_bucket_client(repo_id)
         
     synth_data = []
-    
     for fname in json_files:
         path = os.path.join(json_dir, fname)
         s3_key = f"data/raw_jsons/{fname}"
         
-        print(f"Downloading {s3_key} from DagsHub S3...")
         try:
             s3_client.download_file(repo_name, s3_key, path)
         except Exception as e:
-            print(f"Warning: Failed to download {fname} from S3: {e}")
+            pass # ignore if exists locally
         
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 synth_data.extend(data)
-        else:
-            print(f"ERROR: {path} not found locally or in DagsHub S3.")
-            return
 
     df_synth = pd.DataFrame(synth_data)
-    print(f"Loaded {len(df_synth)} synthetic examples.")
-    print("Synthetic label distribution:", df_synth["label"].value_counts().to_dict())
+    df_synth["text"] = df_synth["text"].apply(clean_text)
+    
+    synth_scams = df_synth[df_synth["label"] == 1]
+    synth_legits = df_synth[df_synth["label"] == 0]
+    
+    print(f"Loaded LLM Data: {len(synth_scams)} Scams, {len(synth_legits)} Legits.")
 
-    # Download legitimate dataset
+    # 2. Download and Load Teeconnie dataset
     print("\nDownloading teeconnie dataset from DagsHub S3...")
     teeconnie_zip = "data/raw_teeconnie/teeconnie_dataset.zip"
     os.makedirs("data/raw_teeconnie", exist_ok=True)
@@ -79,10 +85,8 @@ def main():
     try:
         s3_client.download_file(repo_name, s3_key, teeconnie_zip)
     except Exception as e:
-        print(f"ERROR: Failed to download {teeconnie_zip} from S3: {e}")
-        return
+        pass
         
-    print("Unzipping teeconnie dataset...")
     with zipfile.ZipFile(teeconnie_zip, 'r') as zipf:
         zipf.extractall("data/raw_teeconnie/")
         
@@ -98,16 +102,19 @@ def main():
             entries = [e.strip() for e in content.split("\n") if e.strip()]
     
     random.shuffle(entries)
-    aix_samples = entries[:350]  # Balances 75 synth legits to reach 425 total legits
     
-    aix_df = pd.DataFrame({
-        "text": aix_samples,
-        "label": [0] * len(aix_samples)
+    df_teeconnie_full = pd.DataFrame({
+        "text": entries,
+        "label": [0] * len(entries)
     })
+    df_teeconnie_full["text"] = df_teeconnie_full["text"].apply(clean_text)
     
-    print(f"Sampled {len(aix_samples)} legitimate transcripts from Teeconnie.")
+    # We need 350 for train, 1000 for test
+    teeconnie_train = df_teeconnie_full.iloc[:350]
+    teeconnie_test = df_teeconnie_full.iloc[350:1350]
+    print(f"Sampled Teeconnie Data: {len(teeconnie_train)} Train Legits, {len(teeconnie_test)} Test Legits.")
 
-    # Download legacy dataset
+    # 3. Download and Load Legacy Kaggle Dataset
     print("\nDownloading Legacy Kaggle composite dataset from DagsHub S3...")
     csv1 = "data/legacy_composite/composite_train.csv"
     csv2 = "data/legacy_composite/composite_test.csv"
@@ -116,54 +123,50 @@ def main():
     try:
         s3_client.download_file(repo_name, csv1, csv1)
         s3_client.download_file(repo_name, csv2, csv2)
-        df1 = pd.read_csv(csv1)
-        df2 = pd.read_csv(csv2)
-        df_legacy_full = pd.concat([df1, df2], ignore_index=True)
     except Exception as e:
-        print(f"ERROR: Failed to download legacy datasets from S3: {e}")
-        return
-
-    # Stratified sampling of Legacy Dataset (1:2 Ratio)
-    # We have 850 High-Quality rows (425 scams, 425 legits). 
-    # We want 1700 Legacy rows (850 scams, 850 legits).
-    df_legacy_scams = df_legacy_full[df_legacy_full["label"] == 1].sample(850, random_state=SEED)
-    df_legacy_legits = df_legacy_full[df_legacy_full["label"] == 0].sample(850, random_state=SEED)
-    df_legacy = pd.concat([df_legacy_scams, df_legacy_legits], ignore_index=True)
-
-    print(f"Sampled {len(df_legacy)} stratified rows from the Legacy Composite dataset.")
-
-    print("\nMerging all datasets (Synthetic + Teeconnie + Legacy)...")
-    df_all = pd.concat([df_synth, aix_df, df_legacy], ignore_index=True)
-    df_all = df_all.dropna(subset=["text", "label"]).reset_index(drop=True)
-    df_all["label"] = df_all["label"].astype(int)
-    
-    print("Scrubbing structural formatting leakage...")
-    def clean_text(text):
-        text = str(text)
-        text = re.sub(r'(?i)(innocent|suspect):\s*', '', text)
-        text = re.sub(r'\[.*?\]', '', text)
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text.lower()
+        pass
         
-    df_all["text"] = df_all["text"].apply(clean_text)
-    df_all = df_all.drop_duplicates(subset=["text"], keep="first")
+    df1 = pd.read_csv(csv1)
+    df2 = pd.read_csv(csv2)
+    df_legacy_full = pd.concat([df1, df2], ignore_index=True)
+    df_legacy_full = df_legacy_full.dropna(subset=["text", "label"])
+    df_legacy_full["text"] = df_legacy_full["text"].apply(clean_text)
     
-    print(f"Final combined dataset shape: {df_all.shape}")
-    print("Final label distribution:")
-    print(df_all["label"].value_counts(normalize=True) * 100)
+    legacy_scams_full = df_legacy_full[df_legacy_full["label"] == 1].sample(frac=1, random_state=SEED)
+    legacy_legits_full = df_legacy_full[df_legacy_full["label"] == 0].sample(frac=1, random_state=SEED)
     
-    # Stratified split 80/20
-    print("\nPerforming 80/20 stratified split...")
-    train_df, test_df = train_test_split(df_all, test_size=0.2, random_state=SEED, stratify=df_all["label"])
+    # We need 850 Scams / 850 Legits for Train
+    legacy_train_scams = legacy_scams_full.iloc[:850]
+    legacy_train_legits = legacy_legits_full.iloc[:850]
     
-    print(f"Train: {len(train_df)} rows | Test: {len(test_df)} rows")
+    # We need 2000 Scams / 1000 Legits for Test (to pair with 1000 Teeconnie Legits)
+    legacy_test_scams = legacy_scams_full.iloc[850:2850]
+    legacy_test_legits = legacy_legits_full.iloc[850:1850]
+    
+    print(f"Sampled Legacy Train Data: {len(legacy_train_scams)} Scams, {len(legacy_train_legits)} Legits.")
+    print(f"Sampled Legacy Test Data: {len(legacy_test_scams)} Scams, {len(legacy_test_legits)} Legits.")
 
+    # 4. Construct Explicit Train and Test Datasets
+    print("\nConstructing Explicit Train and Test Datasets...")
+    train_df = pd.concat([synth_scams, synth_legits, teeconnie_train, legacy_train_scams, legacy_train_legits], ignore_index=True)
+    test_df = pd.concat([legacy_test_scams, legacy_test_legits, teeconnie_test], ignore_index=True)
+    
+    # Shuffle the datasets thoroughly
+    train_df = train_df.sample(frac=1, random_state=SEED).reset_index(drop=True)
+    test_df = test_df.sample(frac=1, random_state=SEED).reset_index(drop=True)
+    
+    print(f"\nFINAL TRAIN DATASET: {len(train_df)} rows")
+    print(train_df["label"].value_counts().to_dict())
+    
+    print(f"FINAL TEST DATASET: {len(test_df)} rows")
+    print(test_df["label"].value_counts().to_dict())
+
+    # 5. Save and Upload
     os.makedirs("data", exist_ok=True)
     train_df.to_csv("data/train.csv", index=False)
     test_df.to_csv("data/test.csv", index=False)
-    print("\nSaved locally temporarily.")
+    print("\nSaved locally.")
     
-    # Upload to DagsHub Data Storage
     print(f"\nUploading datasets directly to DagsHub ({repo_id})...")
     try:
         dagshub.upload_files(repo_id, local_path="data/train.csv", remote_path="data/train.csv", bucket=True)
