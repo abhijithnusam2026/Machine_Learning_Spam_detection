@@ -9,6 +9,8 @@ import json
 import random
 import re
 import pandas as pd
+import requests
+from requests.auth import HTTPBasicAuth
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
@@ -19,19 +21,38 @@ SEED = 42
 random.seed(SEED)
 
 def main():
-    print("Loading synthesized JSON data...")
-    json_dir = "data/synthesized_data"
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    username = os.getenv("MLFLOW_TRACKING_USERNAME")
+    password = os.getenv("MLFLOW_TRACKING_PASSWORD")
+    
+    print("Loading synthesized JSON data from DagsHub...")
+    json_dir = "data/raw_jsons"
+    os.makedirs(json_dir, exist_ok=True)
     json_files = ["scam_call_hard_examples_250_fable.json", "scam_call_transcripts_250_combined_gpt5.6.json"]
     
+    auth = HTTPBasicAuth(username, password) if username and password else None
     synth_data = []
+    
     for fname in json_files:
         path = os.path.join(json_dir, fname)
+        # Download from DagsHub
+        if repo_owner and repo_name:
+            url = f"https://dagshub.com/{repo_owner}/{repo_name}/raw/main/data/raw_jsons/{fname}"
+            resp = requests.get(url, auth=auth)
+            if resp.status_code == 200:
+                with open(path, "wb") as f:
+                    f.write(resp.content)
+            else:
+                print(f"Warning: Failed to download {fname} from DagsHub (Status {resp.status_code})")
+        
         if os.path.exists(path):
             with open(path, "r") as f:
                 data = json.load(f)
                 synth_data.extend(data)
         else:
-            print(f"Warning: {path} not found.")
+            print(f"ERROR: {path} not found locally or in DagsHub.")
+            return
 
     df_synth = pd.DataFrame(synth_data)
     print(f"Loaded {len(df_synth)} synthetic examples.")
