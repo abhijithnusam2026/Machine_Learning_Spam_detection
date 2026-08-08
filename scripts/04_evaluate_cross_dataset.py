@@ -110,14 +110,23 @@ def main():
     model.to(device)
     model.eval()
     
-    # 3. Inference (Batched for speed)
-    batch_size = 16
-    all_preds = []
+    # 3. Inference (Batched for speed and memory efficiency)
+    batch_size = 4  # Reduced batch size to prevent OOM on 8192 max_length
     
-    print(f"Starting batched inference on {len(texts)} samples...")
+    # Sort by length to minimize padding overhead in batches
+    print("Sorting dataset by text length to optimize memory usage...")
+    lengths = [len(str(t)) for t in texts]
+    sorted_indices = np.argsort(lengths)
+    
+    sorted_texts = [texts[i] for i in sorted_indices]
+    sorted_labels = [true_labels[i] for i in sorted_indices]
+    
+    all_preds_sorted = []
+    
+    print(f"Starting batched inference on {len(sorted_texts)} samples...")
     with torch.no_grad():
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i+batch_size]
+        for i in range(0, len(sorted_texts), batch_size):
+            batch_texts = sorted_texts[i:i+batch_size]
             inputs = tokenizer(batch_texts, return_tensors="pt", padding=True, truncation=True, max_length=8192).to(device)
             
             if "token_type_ids" in inputs:
@@ -126,10 +135,21 @@ def main():
             outputs = model(**inputs)
             logits = outputs.logits
             preds = torch.argmax(logits, dim=-1).cpu().tolist()
-            all_preds.extend(preds)
+            all_preds_sorted.extend(preds)
             
-            if (i // batch_size) % 10 == 0:
-                print(f"Processed {i}/{len(texts)}...")
+            # Clear CUDA cache periodically to prevent memory fragmentation
+            if i % 100 == 0 and device == "cuda":
+                torch.cuda.empty_cache()
+            
+            if (i // batch_size) % 50 == 0:
+                print(f"Processed {i}/{len(sorted_texts)}...")
+                
+    # Unsort predictions to match original true_labels order
+    unsorted_preds = [0] * len(all_preds_sorted)
+    for sorted_idx, original_idx in enumerate(sorted_indices):
+        unsorted_preds[original_idx] = all_preds_sorted[sorted_idx]
+        
+    all_preds = unsorted_preds
                 
     # 4. Metrics
     print("\n--- Cross-Dataset Evaluation Results ---")
