@@ -66,22 +66,22 @@ def main():
                 arcname = os.path.relpath(file_path, teeconnie_path)
                 zipf.write(file_path, arcname)
 
-    print("\n--- 2. Uploading to DagsHub ---")
+    print("\n--- 2. Uploading to DagsHub Data Storage (Bucket) ---")
     try:
-        from dagshub.upload import Repo
-        repo = Repo(repo_owner, repo_name)
+        import dagshub
+        repo_id = f"{repo_owner}/{repo_name}"
         
         for file in [json1, json2, csv1, csv2, teeconnie_zip]:
             if os.path.exists(file):
-                print(f"Uploading {file} to branch 'model-long-context'...")
-                repo.upload(
+                print(f"Uploading {file} to DagsHub storage bucket...")
+                dagshub.upload_files(
+                    repo_id, 
                     local_path=file, 
                     remote_path=file, 
-                    commit_message=f"Archive {file} from external source",
-                    branch="model-long-context"
+                    bucket=True
                 )
                 
-        print("Upload complete! All historical datasets are now centralized in DagsHub.")
+        print("Upload complete! All historical datasets are now centralized in DagsHub Storage.")
     except Exception as e:
         print(f"Failed to upload to DagsHub: {e}")
 

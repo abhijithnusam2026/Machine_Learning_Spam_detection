@@ -147,11 +147,11 @@ def main():
     if repo_owner and repo_name:
         print(f"\nUploading datasets directly to DagsHub ({repo_owner}/{repo_name})...")
         try:
-            from dagshub.upload import Repo
-            repo = Repo(repo_owner, repo_name)
-            repo.upload(local_path="data/train.csv", remote_path="data/train.csv", commit_message="Update train dataset via pipeline", branch="model-long-context")
-            repo.upload(local_path="data/test.csv", remote_path="data/test.csv", commit_message="Update test dataset via pipeline", branch="model-long-context")
-            print("Successfully uploaded to DagsHub!")
+            import dagshub
+            repo_id = f"{repo_owner}/{repo_name}"
+            dagshub.upload_files(repo_id, local_path="data/train.csv", remote_path="data/train.csv", bucket=True)
+            dagshub.upload_files(repo_id, local_path="data/test.csv", remote_path="data/test.csv", bucket=True)
+            print("Successfully uploaded to DagsHub Storage Bucket!")
         except Exception as e:
             print(f"Failed to upload to DagsHub: {e}")
             print("Make sure you are logged in using `dagshub login`")
