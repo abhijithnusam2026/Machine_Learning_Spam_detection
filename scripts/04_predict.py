@@ -50,7 +50,7 @@ def main():
     
     if args.model_dir == "mlflow":
         print("Fetching latest model from DagsHub MLflow registry...")
-        mlflow.set_experiment("modernbert-scam-detection")
+        mlflow.set_experiment("scam-detection-ablation")
         
         # Load directly from the Model Registry instead of searching for runs
         model_uri = "models:/ModernBERT-Scam-Classifier/latest"

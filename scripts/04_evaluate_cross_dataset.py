@@ -50,6 +50,7 @@ def main():
     load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", type=str, default="./scam-classifier-model", help="Path to model directory or 'mlflow' to pull from DagsHub")
+    parser.add_argument("--registry_name", type=str, default="ModernBERT-Scam-Classifier", help="Name of the model in DagsHub MLflow Registry (if --model_dir=mlflow)")
     args = parser.parse_args()
     
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
@@ -89,10 +90,10 @@ def main():
     # 2. Load Model
     if args.model_dir == "mlflow":
         print("Fetching latest model from DagsHub MLflow registry...")
-        mlflow.set_experiment("modernbert-scam-detection")
+        mlflow.set_experiment("scam-detection-ablation")
         
-        # Load directly from the Model Registry instead of searching for runs
-        model_uri = "models:/ModernBERT-Scam-Classifier/latest"
+        # Load directly from the Model Registry
+        model_uri = f"models:/{args.registry_name}/latest"
         print(f"Loading model from registry: {model_uri}")
         
         try:
@@ -111,7 +112,13 @@ def main():
     model.eval()
     
     # 3. Inference (Batched for speed and memory efficiency)
-    batch_size = 4  # Reduced batch size to prevent OOM on 8192 max_length
+    batch_size = 4  # Reduced batch size to prevent OOM
+    
+    max_len = tokenizer.model_max_length
+    if max_len > 100000:
+        max_len = 8192
+        
+    print(f"Tokenization max_length set to: {max_len}")
     
     # Sort by length to minimize padding overhead in batches
     print("Sorting dataset by text length to optimize memory usage...")
@@ -127,7 +134,7 @@ def main():
     with torch.no_grad():
         for i in range(0, len(sorted_texts), batch_size):
             batch_texts = sorted_texts[i:i+batch_size]
-            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True, truncation=True, max_length=8192).to(device)
+            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True, truncation=True, max_length=max_len).to(device)
             
             if "token_type_ids" in inputs:
                 del inputs["token_type_ids"]

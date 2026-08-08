@@ -122,9 +122,15 @@ def main():
 
     # 2. Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    
+    max_len = tokenizer.model_max_length
+    if max_len > 100000:
+        max_len = 8192  # Fallback for models without a defined max length
+        
+    print(f"Tokenization max_length set to: {max_len}")
 
     def tokenize_fn(batch):
-        return tokenizer(batch["text"], truncation=True, max_length=8192)
+        return tokenizer(batch["text"], truncation=True, max_length=max_len)
 
     train_ds = train_ds.map(tokenize_fn, batched=True)
     val_ds = val_ds.map(tokenize_fn, batched=True)
@@ -179,7 +185,7 @@ def main():
 
     # 5. Train
     print("Starting MLflow run to log datasets and metrics...")
-    mlflow.set_experiment("modernbert-scam-detection")
+    mlflow.set_experiment("scam-detection-ablation")
     with mlflow.start_run():
         mlflow.log_artifact(args.train_data, "dataset")
         mlflow.log_artifact(args.test_data, "dataset")
@@ -204,16 +210,16 @@ def main():
             return len(tokenizer.encode(str(text), truncation=False))
             
         test_df["token_count"] = test_df["text"].apply(token_len)
-        long_mask = test_df["token_count"] > 8192
+        long_mask = test_df["token_count"] > max_len
         short_mask = ~long_mask
         
         if short_mask.sum() > 0:
             acc_short = accuracy_score(y_true[short_mask], preds[short_mask])
-            print(f"ModernBERT accuracy, short transcripts (≤ 8192 tokens): {acc_short:.2%} (N={short_mask.sum()})")
+            print(f"{args.model_name} accuracy, short transcripts (≤ {max_len} tokens): {acc_short:.2%} (N={short_mask.sum()})")
         
         if long_mask.sum() > 0:
             acc_long = accuracy_score(y_true[long_mask], preds[long_mask])
-            print(f"ModernBERT accuracy, long transcripts (> 8192 tokens): {acc_long:.2%} (N={long_mask.sum()})")
+            print(f"{args.model_name} accuracy, long transcripts (> {max_len} tokens): {acc_long:.2%} (N={long_mask.sum()})")
 
 
         # 7. Save final model + tokenizer
@@ -227,12 +233,17 @@ def main():
             "model": trainer.model,
             "tokenizer": tokenizer,
         }
+        
+        # Format the model name for the registry (e.g. "distilbert-base-uncased" -> "distilbert-base-uncased-Scam-Classifier")
+        clean_model_name = args.model_name.split("/")[-1]
+        registry_name = f"{clean_model_name}-Scam-Classifier"
+        
         mlflow.transformers.log_model(
             transformers_model=components,
-            artifact_path="modernbert-scam-classifier",
-            registered_model_name="ModernBERT-Scam-Classifier"
+            artifact_path=clean_model_name,
+            registered_model_name=registry_name
         )
-        print("Model successfully registered to DagsHub Model Registry as 'ModernBERT-Scam-Classifier'!")
+        print(f"Model successfully registered to DagsHub Model Registry as '{registry_name}'!")
 
     if push_to_hub:
         print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")
