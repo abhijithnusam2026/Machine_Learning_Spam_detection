@@ -10,8 +10,7 @@ import random
 import re
 import pandas as pd
 import requests
-import boto3
-from requests.auth import HTTPBasicAuth
+import dagshub
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
@@ -32,16 +31,10 @@ def main():
     os.makedirs(json_dir, exist_ok=True)
     json_files = ["scam_call_hard_examples_250.json", "scam_call_transcripts_250_combined.json"]
     
-    auth = HTTPBasicAuth(username, password) if username and password else None
-    
-    # Initialize boto3 S3 client for DagsHub
+    # Initialize dagshub S3 client
     s3_client = None
-    if repo_owner and repo_name and username and password:
-        s3_client = boto3.client('s3',
-            endpoint_url=f"https://dagshub.com/{repo_owner}/{repo_name}.s3",
-            aws_access_key_id=username,
-            aws_secret_access_key=password
-        )
+    if repo_owner and repo_name:
+        s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
         
     synth_data = []
     

@@ -13,8 +13,7 @@ import os
 import random
 import mlflow
 import requests
-import boto3
-from requests.auth import HTTPBasicAuth
+import dagshub
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -88,16 +87,12 @@ def main():
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
     password = os.getenv("MLFLOW_TRACKING_PASSWORD")
     
-    if repo_owner and repo_name and username and password:
+    if repo_owner and repo_name:
         print(f"Fetching latest datasets from DagsHub S3 Bucket ({repo_owner}/{repo_name})...")
         os.makedirs("data", exist_ok=True)
         
         try:
-            s3_client = boto3.client('s3',
-                endpoint_url=f"https://dagshub.com/{repo_owner}/{repo_name}.s3",
-                aws_access_key_id=username,
-                aws_secret_access_key=password
-            )
+            s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
             for file in [args.train_data, args.test_data]:
                 print(f"Downloading {file} from S3...")
                 s3_client.download_file(repo_name, file, file)
