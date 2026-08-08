@@ -153,13 +153,20 @@ def main():
     hub_model_id = "tanu011235/modernbert-scam-classifier" if push_to_hub else None
 
     # 4. Training config
+    # We use a small physical batch size + gradient accumulation to prevent CUDA OOM on 8192 tokens
+    physical_batch_size = 2
+    gradient_accumulation_steps = args.batch_size // physical_batch_size
+    if gradient_accumulation_steps < 1:
+        gradient_accumulation_steps = 1
+        
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         eval_strategy="epoch",
         save_strategy="epoch",
         learning_rate=args.lr,
-        per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size,
+        per_device_train_batch_size=physical_batch_size,
+        per_device_eval_batch_size=physical_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         num_train_epochs=args.epochs,
         weight_decay=0.01,
         load_best_model_at_end=True,
