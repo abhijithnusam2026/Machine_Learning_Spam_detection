@@ -29,7 +29,7 @@ def main():
     print("Loading synthesized JSON data from DagsHub...")
     json_dir = "data/raw_jsons"
     os.makedirs(json_dir, exist_ok=True)
-    json_files = ["scam_call_hard_examples_250_fable.json", "scam_call_transcripts_250_combined_gpt5.6.json"]
+    json_files = ["scam_call_hard_examples_250.json", "scam_call_transcripts_250_combined.json"]
     
     auth = HTTPBasicAuth(username, password) if username and password else None
     synth_data = []

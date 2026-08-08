@@ -1,18 +1,23 @@
 import os
-import subprocess
+import requests
+import kagglehub
+import glob
+import shutil
 from dotenv import load_dotenv
 
-def extract_from_git(ref, output_path):
-    print(f"Extracting {ref}...")
-    result = subprocess.run(["git", "show", ref], capture_output=True)
-    if result.returncode == 0:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+def download_hf_json(url, output_path):
+    print(f"Downloading {url}...")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # Convert github/hf blob URLs to raw download URLs
+    url = url.replace("/blob/", "/resolve/")
+    resp = requests.get(url)
+    if resp.status_code == 200:
         with open(output_path, "wb") as f:
-            f.write(result.stdout)
+            f.write(resp.content)
         print(f"Saved to {output_path}")
         return True
     else:
-        print(f"Failed to extract {ref}: {result.stderr.decode('utf-8')}")
+        print(f"Failed to download from HF (Status {resp.status_code})")
         return False
 
 def main():
@@ -25,19 +30,29 @@ def main():
         print("ERROR: DAGSHUB_REPO_OWNER or DAGSHUB_REPO_NAME missing from .env")
         return
 
-    print("--- 1. Extracting historical data from Git ---")
+    print("--- 1. Downloading historical data from web ---")
     
-    # 1. LLM JSONs (from commit c690a08 before deletion)
-    json1 = "data/raw_jsons/scam_call_hard_examples_250_fable.json"
-    json2 = "data/raw_jsons/scam_call_transcripts_250_combined_gpt5.6.json"
-    extract_from_git("c690a08:data/synthesized_data/scam_call_hard_examples_250_fable.json", json1)
-    extract_from_git("c690a08:data/synthesized_data/scam_call_transcripts_250_combined_gpt5.6.json", json2)
+    # 1. LLM JSONs (from Hugging Face)
+    json1 = "data/raw_jsons/scam_call_hard_examples_250.json"
+    json2 = "data/raw_jsons/scam_call_transcripts_250_combined.json"
+    download_hf_json("https://huggingface.co/datasets/tanu011235/spam/resolve/main/scam_call_hard_examples_250.json", json1)
+    download_hf_json("https://huggingface.co/datasets/tanu011235/spam/resolve/main/scam_call_transcripts_250_combined.json", json2)
     
-    # 2. Legacy Composite (from model-distilbert branch)
+    # 2. Legacy Composite (from Kaggle)
+    print("\nDownloading Kaggle dataset...")
+    kaggle_path = kagglehub.dataset_download("ibrahimbagwan12/composite-scam-transcript-dataset")
+    print(f"Kaggle data downloaded to: {kaggle_path}")
+    
     csv1 = "data/legacy_composite/composite_train.csv"
     csv2 = "data/legacy_composite/composite_test.csv"
-    extract_from_git("model-distilbert:data/processed/composite_train.csv", csv1)
-    extract_from_git("model-distilbert:data/processed/composite_test.csv", csv2)
+    os.makedirs("data/legacy_composite", exist_ok=True)
+    
+    # Copy from kaggle cache to our local data folder
+    for f in glob.glob(kaggle_path + "/*.csv"):
+        if "train" in f.lower():
+            shutil.copy(f, csv1)
+        elif "test" in f.lower():
+            shutil.copy(f, csv2)
 
     print("\n--- 2. Uploading to DagsHub ---")
     try:
@@ -47,7 +62,7 @@ def main():
         for file in [json1, json2, csv1, csv2]:
             if os.path.exists(file):
                 print(f"Uploading {file}...")
-                repo.upload(file=file, path=file, commit_message=f"Archive {file}")
+                repo.upload(file=file, path=file, commit_message=f"Archive {file} from external source")
                 
         print("Upload complete! All historical datasets are now centralized in DagsHub.")
     except Exception as e:
