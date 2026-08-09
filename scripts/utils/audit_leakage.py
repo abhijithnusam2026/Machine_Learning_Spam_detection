@@ -4,7 +4,8 @@ from collections import Counter
 import re
 
 print("Loading data...")
-train = pd.read_csv("data/train.csv")
+train = pd.read_csv("data/phase1/train.csv")
+test = pd.read_csv("data/phase1/test.csv")
 
 scam = train[train['label'] == 1]
 legit = train[train['label'] == 0]

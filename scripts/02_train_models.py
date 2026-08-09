@@ -2,7 +2,7 @@
 Fine-tune ModernBERT to classify text as scam (1) or legit (0).
 
 Usage:
-    python 03_train_modernbert.py --train_data data/train.csv --test_data data/test.csv
+    python scripts/02_train_models.py --train_data data/phase1/train.csv --test_data data/phase1/test.csv
 """
 
 import argparse
@@ -59,8 +59,8 @@ def compute_metrics(eval_pred):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_data", type=str, default="data/train.csv", help="Path to train CSV")
-    parser.add_argument("--test_data", type=str, default="data/test.csv", help="Path to test CSV")
+    parser.add_argument("--train_data", type=str, default="data/phase1/train.csv", help="Path to train CSV")
+    parser.add_argument("--test_data", type=str, default="data/phase1/test.csv", help="Path to test CSV")
     parser.add_argument("--model_name", type=str, default="answerdotai/ModernBERT-base")
     parser.add_argument("--output_dir", type=str, default="./scam-classifier-model")
     parser.add_argument("--epochs", type=int, default=4)
