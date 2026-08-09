@@ -14,6 +14,7 @@ import glob
 import zipfile
 import pandas as pd
 import dagshub
+from datasets import load_dataset
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -102,6 +103,16 @@ def load_kaggle_datasets():
                     scams.append({"text": conv_text, "label": 1})
                 else:
                     legits.append({"text": conv_text, "label": 0})
+                    
+    # 4. Hugging Face: BothBosu/youtube-scam-conversations
+    print("Pulling BothBosu dataset from Hugging Face...")
+    try:
+        hf_dataset = load_dataset("BothBosu/youtube-scam-conversations", split="train")
+        for row in hf_dataset:
+            if "text" in row:
+                scams.append({"text": row["text"], "label": 1})
+    except Exception as e:
+        print(f"Failed to load BothBosu from HF: {e}")
                     
     df_external = pd.DataFrame(scams + legits)
     if not df_external.empty:
