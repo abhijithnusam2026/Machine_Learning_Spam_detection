@@ -1,0 +1,18 @@
+{
+    "model_name": "answerdotai/ModernBERT-base",
+    "output_dir": "./scam-classifier-model",
+    "mlflow_experiment": "scam-detection-ultimate",
+    "epochs": 3,
+    "batch_size": 16,
+    "learning_rate": 2e-5,
+    "weight_decay": 0.01,
+    "push_to_hub": false,
+    "data_paths": {
+        "train_local": "data/phase1.5/train.csv",
+        "val_local": "data/phase1.5/val.csv",
+        "test_local": "data/phase1.5/test.csv",
+        "train_remote": "data/phase1.5/train.csv",
+        "val_remote": "data/phase1.5/val.csv",
+        "test_remote": "data/phase1.5/test.csv"
+    }
+}

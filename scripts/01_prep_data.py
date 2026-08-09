@@ -230,17 +230,17 @@ def main():
     print(f"Test (20%): {len(test_df)} rows")
     
     # --- 5. Save & Upload ---
-    os.makedirs("data", exist_ok=True)
-    train_df.to_csv("data/train.csv", index=False)
-    val_df.to_csv("data/val.csv", index=False)
-    test_df.to_csv("data/test.csv", index=False)
+    os.makedirs("data/phase1.5", exist_ok=True)
+    train_df.to_csv("data/phase1.5/train.csv", index=False)
+    val_df.to_csv("data/phase1.5/val.csv", index=False)
+    test_df.to_csv("data/phase1.5/test.csv", index=False)
     print("\nSaved locally.")
     
     print(f"\nUploading Ultimate Datasets directly to DagsHub ({repo_id})...")
     try:
-        dagshub.upload_files(repo_id, local_path="data/train.csv", remote_path="data/train.csv", bucket=True)
-        dagshub.upload_files(repo_id, local_path="data/val.csv", remote_path="data/val.csv", bucket=True)
-        dagshub.upload_files(repo_id, local_path="data/test.csv", remote_path="data/test.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path="data/phase1.5/train.csv", remote_path="data/phase1.5/train.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path="data/phase1.5/val.csv", remote_path="data/phase1.5/val.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path="data/phase1.5/test.csv", remote_path="data/phase1.5/test.csv", bucket=True)
         print("Successfully uploaded to DagsHub Storage Bucket!")
     except Exception as e:
         print(f"Failed to upload to DagsHub: {e}")
