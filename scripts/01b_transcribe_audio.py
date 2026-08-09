@@ -85,10 +85,25 @@ def split_and_upload(df, output_dir="data/phase2_asr"):
     # 3. Split Val+PTQ (20%) into Val (10%) and PTQ (10%)
     val_df, ptq_df = train_test_split(val_ptq_df, test_size=0.5, stratify=val_ptq_df["label"], random_state=42)
     
-    print(f"Train (Fine-Tuning): {len(train_df)} rows")
-    print(f"Validation:          {len(val_df)} rows")
-    print(f"Test (Evaluation):   {len(test_df)} rows")
-    print(f"PTQ Calibration:     {len(ptq_df)} rows")
+    print("\n=========================================")
+    print("      DATASET SPLIT SUMMARY STATS")
+    print("=========================================")
+    
+    def print_stats(name, dataframe):
+        total = len(dataframe)
+        scams = len(dataframe[dataframe['label'] == 1])
+        legits = len(dataframe[dataframe['label'] == 0])
+        print(f"--- {name} ---")
+        print(f"Total Rows: {total}")
+        if total > 0:
+            print(f"Class Balance: {scams} Scams ({scams/total:.1%}) | {legits} Legits ({legits/total:.1%})")
+        print("")
+
+    print_stats("Train (Fine-Tuning, 60%)", train_df)
+    print_stats("Test (Evaluation, 20%)", test_df)
+    print_stats("Validation (10%)", val_df)
+    print_stats("PTQ Calibration (10%)", ptq_df)
+    print("=========================================\n")
     
     # Save locally
     os.makedirs(output_dir, exist_ok=True)
