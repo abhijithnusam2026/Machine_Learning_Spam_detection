@@ -32,12 +32,18 @@ def clean_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text.lower()
 
-def load_swda(swda_dir="data/raw_external/swda"):
+def load_swda(s3_client, repo_name, swda_dir="data/raw_external/swda"):
     """Extracts and parses the Switchboard Dialog Act Corpus from SWDA zip."""
     swda_zip = os.path.join(swda_dir, "swda.zip")
+    
     if not os.path.exists(swda_zip):
-        print(f"SWDA zip not found at {swda_zip}. Skipping...")
-        return pd.DataFrame(columns=["text", "label"])
+        print(f"Downloading SWDA from DagsHub S3...")
+        os.makedirs(swda_dir, exist_ok=True)
+        try:
+            s3_client.download_file(repo_name, "data/raw_external/swda/swda.zip", swda_zip)
+        except Exception as e:
+            print(f"Failed to download SWDA: {e}")
+            return pd.DataFrame(columns=["text", "label"])
         
     extract_dir = os.path.join(swda_dir, "extracted")
     with zipfile.ZipFile(swda_zip, 'r') as zip_ref:
@@ -66,12 +72,18 @@ def load_swda(swda_dir="data/raw_external/swda"):
     print(f"Loaded SWDA (Switchboard): {len(df_swda)} Legitimate Conversations.")
     return df_swda
 
-def load_kaggle_datasets():
+def load_kaggle_datasets(s3_client, repo_name):
     """Loads external Kaggle datasets from data/raw_external"""
     scams, legits = [], []
+    os.makedirs("data/raw_external", exist_ok=True)
     
     # 1. YouTube Scam Calls (rivalcults)
     yt_csv = "data/raw_external/FullTranscriptData.csv"
+    if not os.path.exists(yt_csv):
+        try:
+            s3_client.download_file(repo_name, "data/raw_external/FullTranscriptData.csv", yt_csv)
+        except: pass
+        
     if os.path.exists(yt_csv):
         df_yt = pd.read_csv(yt_csv)
         if "Content" in df_yt.columns:
@@ -80,6 +92,11 @@ def load_kaggle_datasets():
                 
     # 2. Thai Call Center Dataset (jxxn03x)
     thai_csv = "data/raw_external/Dataset.csv"
+    if not os.path.exists(thai_csv):
+        try:
+            s3_client.download_file(repo_name, "data/raw_external/Dataset.csv", thai_csv)
+        except: pass
+        
     if os.path.exists(thai_csv):
         df_thai = pd.read_csv(thai_csv)
         if "Text" in df_thai.columns and "Type" in df_thai.columns:
@@ -91,6 +108,11 @@ def load_kaggle_datasets():
                     
     # 3. Call Transcripts / Scam Determinations (mealss)
     better_csv = "data/raw_external/BETTER30.csv"
+    if not os.path.exists(better_csv):
+        try:
+            s3_client.download_file(repo_name, "data/raw_external/BETTER30.csv", better_csv)
+        except: pass
+        
     if os.path.exists(better_csv):
         df_better = pd.read_csv(better_csv)
         if "CONVERSATION_ID" in df_better.columns and "TEXT" in df_better.columns and "LABEL" in df_better.columns:
@@ -195,8 +217,8 @@ def main():
     
     # --- 2. Load New External Data ---
     print("\nLoading new external datasets (Phase 1.5)...")
-    df_swda = load_swda()
-    df_external_kaggle = load_kaggle_datasets()
+    df_swda = load_swda(s3_client, repo_name)
+    df_external_kaggle = load_kaggle_datasets(s3_client, repo_name)
     
     # --- 3. Consolidate and Balance ---
     print("\nConsolidating into the Ultimate Dataset...")
