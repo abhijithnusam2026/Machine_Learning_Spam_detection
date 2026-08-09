@@ -1,4 +1,0 @@
-
-yt-dlp
-openai-whisper
-librosa
