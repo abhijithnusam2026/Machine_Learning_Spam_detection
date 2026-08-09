@@ -28,9 +28,7 @@ dependencies = [
   "accelerate>=1.1.0",
   "torchvision>=0.28.0",
   "seaborn>=0.13.2",
-  "yt-dlp>=2026.7.4",
-  "librosa>=0.10.0",
-  "soundfile>=0.12.1",
+  "youtube-transcript-api>=0.6.3",
 ]
 
 [project.optional-dependencies]
