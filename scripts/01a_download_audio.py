@@ -8,6 +8,8 @@ import os
 import argparse
 import yt_dlp
 import pandas as pd
+import dagshub
+from dotenv import load_dotenv
 
 def download_audio(urls, label, output_dir="data/raw_audio"):
     """
@@ -102,6 +104,34 @@ def main():
     meta_path = "data/raw_audio/audio_metadata.csv"
     df.to_csv(meta_path, index=False)
     print(f"\nMetadata saved to {meta_path}")
+    
+    # Upload Raw Audio to DagsHub S3 Backup
+    print("\n--- Backing up Raw Audio to DagsHub S3 ---")
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    
+    if repo_owner and repo_name:
+        try:
+            dagshub.auth.add_app_token(os.getenv("MLFLOW_TRACKING_PASSWORD"))
+            s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
+            
+            # Upload the metadata file
+            s3_client.upload_file(meta_path, repo_name, meta_path)
+            print(f"Uploaded {meta_path}")
+            
+            # Upload all .wav files
+            for meta in scam_meta + legit_meta:
+                file_path = meta["file_path"]
+                if os.path.exists(file_path):
+                    print(f"Uploading {file_path} to S3...")
+                    s3_client.upload_file(file_path, repo_name, file_path)
+            
+            print("Successfully backed up all raw audio to DagsHub S3!")
+        except Exception as e:
+            print(f"Failed to upload to S3: {e}")
+    else:
+        print("Skipping DagsHub S3 upload (missing env vars).")
 
 if __name__ == "__main__":
     main()
