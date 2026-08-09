@@ -52,6 +52,7 @@ lightning_logs/
 logs/
 profile/
 tensorboard/
+*.png
 
 # OS/editor
 .DS_Store

@@ -27,6 +27,7 @@ dependencies = [
   "wrapt>=2.3.0",
   "accelerate>=1.1.0",
   "torchvision>=0.28.0",
+  "seaborn>=0.13.2",
 ]
 
 [project.optional-dependencies]
