@@ -1,46 +1,84 @@
 """
-Phase 2: YouTube Transcript API Pipeline
-Directly fetches auto-generated (or manual) captions from YouTube using 
-youtube-transcript-api. This acts as our source of "messy ASR" text 
-without requiring local Whisper execution.
+Phase 2: Hybrid ASR Data Acquisition
+- Scams (Label 1): Fetches pre-transcribed (Whisper) robocall metadata from NCSU github.
+- Legit (Label 0): Fetches 'english_transcription' from Hugging Face PolyAI/minds14 dataset.
+Aggregates, balances (1:1), and splits into Train/Val/Test/PTQ.
 """
 
 import os
+import io
+import requests
 import pandas as pd
 import dagshub
 from dotenv import load_dotenv
-from youtube_transcript_api import YouTubeTranscriptApi
+from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 
-def fetch_transcripts(video_ids, label):
+def fetch_ncsu_scam_data():
     """
-    Fetches the transcript for a list of video IDs.
-    Returns a list of dictionaries with text and label.
+    Downloads the metadata.csv from the NCSU Robocall dataset repository.
+    Extracts the 'transcript' column as Label 1 (Scam).
+    """
+    print("Fetching NCSU Robocall Dataset (Scams)...")
+    url = "https://raw.githubusercontent.com/wspr-ncsu/robocall-audio-dataset/main/metadata.csv"
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        # Read CSV from string
+        df = pd.read_csv(io.StringIO(response.text))
+        
+        # We only need the transcription
+        transcripts = df['transcript'].dropna().tolist()
+        
+        results = []
+        for text in transcripts:
+            # Filter extremely short artifacts
+            if len(str(text).split()) > 10:
+                results.append({
+                    "source": "ncsu_robocall",
+                    "text": str(text),
+                    "label": 1
+                })
+                
+        print(f"  [SUCCESS] Extracted {len(results)} scam transcripts.")
+        return results
+    except Exception as e:
+        print(f"  [FAILED] Could not fetch NCSU dataset: {e}")
+        return []
+
+def fetch_hf_legit_data():
+    """
+    Fetches the PolyAI/minds14 dataset from Hugging Face (en-US, en-GB, en-AU).
+    Drops the audio column immediately to prevent decoding errors.
+    Returns a list of dictionaries with text and label 0.
     """
     results = []
-    print(f"Fetching transcripts for {len(video_ids)} videos (Label: {label})...")
+    print(f"\nFetching PolyAI/minds14 Dataset (Legit)...")
     
-    for vid in video_ids:
+    locales = ["en-US", "en-GB", "en-AU"]
+    
+    for loc in locales:
         try:
-            # This fetches the transcript as a list of dictionaries (text, start, duration)
-            transcript_list = YouTubeTranscriptApi.get_transcript(vid)
+            print(f"  Loading subset: {loc}...")
+            # Load dataset and immediately drop the 'audio' column to prevent torchcodec decoding crashes
+            ds = load_dataset("PolyAI/minds14", name=loc, split="train", trust_remote_code=True)
+            ds = ds.remove_columns(["audio", "path", "intent_class", "lang_id"])
             
-            # Combine all pieces of text into a single document
-            full_text = " ".join([item['text'] for item in transcript_list])
-            
-            if len(full_text.split()) > 50: # Filter out extremely short errors
-                results.append({
-                    "video_id": vid,
-                    "text": full_text,
-                    "label": label
-                })
-                print(f"  [SUCCESS] {vid}")
-            else:
-                print(f"  [SKIPPED] {vid} - Transcript too short")
-                
+            for row in ds:
+                text = row.get("english_transcription", "")
+                if text and len(str(text).split()) > 5:
+                    results.append({
+                        "source": f"minds14_{loc}",
+                        "text": str(text),
+                        "label": 0
+                    })
+            print(f"  [SUCCESS] Extracted transcripts from {loc}.")
         except Exception as e:
-            print(f"  [FAILED] {vid}: {e}")
+            print(f"  [FAILED] {loc}: {e}")
             
+    print(f"  [SUCCESS] Total legit transcripts extracted: {len(results)}")
     return results
 
 def split_and_upload(df, output_dir="data/phase2_asr"):
@@ -110,35 +148,24 @@ def split_and_upload(df, output_dir="data/phase2_asr"):
         print("Skipping DagsHub S3 upload (missing env vars).")
 
 def main():
-    print("Initializing Phase 2 YouTube Transcript API Pipeline...\n")
+    print("Initializing Phase 2 Hybrid ASR Data Acquisition...\n")
     
-    # Provide the 11-character YouTube video IDs
-    # E.g. https://www.youtube.com/watch?v=5Vj-b7-Tf1M -> 5Vj-b7-Tf1M
+    # 1. Fetch 1400+ Scams from NCSU
+    scam_data = fetch_ncsu_scam_data()
     
-    scam_ids = [
-        "5Vj-b7-Tf1M", # Kitboga: The Angriest Scammer
-        "1F_47Z9e3L4"  # Scammer Payback: Destroying Scammer
-    ]
+    # 2. Fetch Legit Transcripts from Hugging Face
+    legit_data = fetch_hf_legit_data()
     
-    legit_ids = [
-        "jNQXAC9IVRw", # Me at the zoo (Has captions)
-        "QH2-TGUlwu4", # Nyan Cat (No captions, will test failure handling)
-        "BaW_jenozKc"  # BBC News
-    ]
-    
-    scam_data = fetch_transcripts(scam_ids, label=1)
-    legit_data = fetch_transcripts(legit_ids, label=0)
-    
-    # Downsample to enforce strict 1:1 balance
+    # 3. Balance Dataset (Downsample majority class)
     min_size = min(len(scam_data), len(legit_data))
-    
     print(f"\nBalancing Dataset: Downsampling to {min_size} files per class.")
-    balanced_data = scam_data[:min_size] + legit_data[:min_size]
     
-    if not balanced_data:
-        print("ERROR: No valid transcripts fetched. Cannot proceed.")
+    if min_size == 0:
+        print("ERROR: One of the classes has 0 transcripts. Cannot proceed.")
         return
         
+    balanced_data = scam_data[:min_size] + legit_data[:min_size]
+    
     df = pd.DataFrame(balanced_data)
     
     # Save the raw aggregated dataset
