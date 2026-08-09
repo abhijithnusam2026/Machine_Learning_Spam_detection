@@ -163,15 +163,15 @@ def main():
     print(test_df["label"].value_counts().to_dict())
 
     # 5. Save and Upload
-    os.makedirs("data", exist_ok=True)
-    train_df.to_csv("data/train.csv", index=False)
-    test_df.to_csv("data/test.csv", index=False)
+    os.makedirs("data/phase1", exist_ok=True)
+    train_df.to_csv("data/phase1/train.csv", index=False)
+    test_df.to_csv("data/phase1/test.csv", index=False)
     print("\nSaved locally.")
     
     print(f"\nUploading datasets directly to DagsHub ({repo_id})...")
     try:
-        dagshub.upload_files(repo_id, local_path="data/train.csv", remote_path="data/train.csv", bucket=True)
-        dagshub.upload_files(repo_id, local_path="data/test.csv", remote_path="data/test.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path="data/phase1/train.csv", remote_path="data/phase1/train.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path="data/phase1/test.csv", remote_path="data/phase1/test.csv", bucket=True)
         print("Successfully uploaded to DagsHub Storage Bucket!")
     except Exception as e:
         print(f"Failed to upload to DagsHub: {e}")
