@@ -13,6 +13,8 @@ import dagshub
 from dotenv import load_dotenv
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def get_device():
     if torch.backends.mps.is_available():
@@ -171,6 +173,28 @@ def main():
     
     print("\nConfusion Matrix:")
     print(cm)
+    
+    # Plotting and saving the Confusion Matrix
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Legit', 'Scam'], yticklabels=['Legit', 'Scam'])
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.title(f'Confusion Matrix - {args.registry_name}')
+    
+    cm_path = f"confusion_matrix_{args.registry_name}.png"
+    plt.savefig(cm_path)
+    print(f"\nSaved confusion matrix plot to {cm_path}")
+    
+    # Log the figure to MLflow if tracking is enabled
+    if args.model_dir == "mlflow":
+        with mlflow.start_run(run_name=f"Evaluation-{args.registry_name}"):
+            mlflow.log_figure(plt.gcf(), "confusion_matrix.png")
+            mlflow.log_metric("eval_accuracy_cross", acc)
+            mlflow.log_metric("eval_f1_cross", f1)
+            print("Logged evaluation metrics and confusion matrix to MLflow.")
+            
+    plt.close()
+    
     print("\n----------------------------------------")
     
 if __name__ == "__main__":
