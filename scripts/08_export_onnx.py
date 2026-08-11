@@ -48,8 +48,9 @@ def export_classifier_to_onnx(model_name="answerdotai/ModernBERT-base", output_d
                 local_file = os.path.join(root, file)
                 upload_to_dagshub(local_file, local_file)
                 
-    except ImportError:
+    except ImportError as e:
         print("[FAILED] Optimum is not installed correctly. Please run: pip install optimum[onnxruntime]")
+        print(f"Exception details: {e}")
     except Exception as e:
         print(f"[FAILED] Export error: {e}")
 
