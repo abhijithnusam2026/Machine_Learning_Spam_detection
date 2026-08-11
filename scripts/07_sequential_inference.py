@@ -72,8 +72,17 @@ def main():
     classifier_model.eval()
     
     if not os.path.exists(sample_audio):
-        print(f"\n[INFO] Provide a valid .wav path to run the E2E pipeline.")
-        return
+        print(f"\n[INFO] Local audio file not found. Fetching a sample audio file on the fly...")
+        import urllib.request
+        os.makedirs(os.path.dirname(sample_audio), exist_ok=True)
+        # We download a public wave file just to test the E2E pipeline
+        url = "https://www2.cs.uic.edu/~i101/SoundFiles/BabyElephantWalk60.wav"
+        try:
+            urllib.request.urlretrieve(url, sample_audio)
+            print(f"  [SUCCESS] Downloaded sample to {sample_audio}")
+        except Exception as e:
+            print(f"  [FAILED] Could not download sample audio: {e}")
+            return
         
     # 1. Transcribe
     transcript = transcribe_audio(sample_audio, whisper_model, processor)

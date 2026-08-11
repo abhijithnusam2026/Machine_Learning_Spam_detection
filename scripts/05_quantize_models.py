@@ -3,14 +3,36 @@ Applies PyTorch Dynamic Post-Training Quantization (INT8) to the ASR and Classif
 """
 
 import os
+import os
 import torch
 import warnings
+import dagshub
+from dotenv import load_dotenv
 from transformers import WhisperForConditionalGeneration, AutoModelForSequenceClassification
 
 # Suppress warnings and set ARM quantization engine for Apple Silicon
 warnings.filterwarnings("ignore")
 if torch.backends.quantized.supported_engines and 'qnnpack' in torch.backends.quantized.supported_engines:
     torch.backends.quantized.engine = 'qnnpack'
+
+def upload_to_dagshub(local_path, s3_path):
+    """Uploads a local file to the DagsHub S3 bucket."""
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+    
+    if repo_owner and repo_name and token:
+        try:
+            print(f"Uploading {local_path} to DagsHub S3...")
+            dagshub.auth.add_app_token(token)
+            s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
+            s3_client.upload_file(local_path, repo_name, s3_path)
+            print(f"  [SUCCESS] Uploaded to S3: {s3_path}")
+        except Exception as e:
+            print(f"  [FAILED] S3 Upload failed: {e}")
+    else:
+        print("  [WARNING] Skipping S3 upload (missing DagsHub credentials).")
 
 def quantize_model(model):
     """
@@ -47,6 +69,8 @@ def quantize_whisper(model_name="openai/whisper-tiny", output_dir="models/quanti
     print(f"FP32 Estimated Size: {fp32_size:.2f} MB")
     print(f"INT8 Saved File Size: {int8_size:.2f} MB")
     print(f"Saved to: {save_path}")
+    
+    upload_to_dagshub(save_path, save_path)
 
 def quantize_classifier(model_name="answerdotai/ModernBERT-base", output_dir="models/quantized_classifier"):
     print(f"\n--- Quantizing Classifier ({model_name}) ---")

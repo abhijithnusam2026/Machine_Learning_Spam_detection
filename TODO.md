@@ -5,7 +5,7 @@
 
 ## Training
 - [ ] Execute Kaggle GPU training for Phase 2 (Domain Adaptation on ASR data) using `data/phase2_asr/train.csv`.
-- [ ] Extract and log final F1/Accuracy metrics for Phase 1.5 and Phase 2 training.
+- [x] Extract and log final F1/Accuracy metrics for Phase 1.5.
 
 ## Optimization
 - [ ] Execute Post-Training Quantization (PTQ) to INT8 and benchmark against the reserved 10% calibration and 20% test sets.

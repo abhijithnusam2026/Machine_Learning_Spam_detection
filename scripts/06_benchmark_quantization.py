@@ -38,14 +38,35 @@ def main():
     load_dotenv()
     
     # Check MLflow config
-    mlflow.set_tracking_uri(f"https://dagshub.com/{os.getenv('DAGSHUB_REPO_OWNER')}/{os.getenv('DAGSHUB_REPO_NAME')}.mlflow")
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    if repo_owner and repo_name:
+        import dagshub
+        dagshub.init(repo_owner=repo_owner, repo_name=repo_name, mlflow=True)
+    
     mlflow.set_experiment("scam-detection-quantized")
     
     # Load dataset
     csv_path = "data/phase2_asr/ptq_calibration.csv"
     if not os.path.exists(csv_path):
-        print(f"Data not found at {csv_path}. Skipping benchmark.")
-        return
+        print(f"Data not found locally at {csv_path}. Fetching from DagsHub S3...")
+        repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+        repo_name = os.getenv("DAGSHUB_REPO_NAME")
+        token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+        if repo_owner and repo_name and token:
+            import dagshub
+            dagshub.auth.add_app_token(token)
+            s3 = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
+            os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+            try:
+                s3.download_file(repo_name, csv_path, csv_path)
+                print("  [SUCCESS] Data downloaded.")
+            except Exception as e:
+                print(f"  [FAILED] S3 Download error: {e}")
+                return
+        else:
+            print("  [FAILED] Missing DagsHub credentials. Skipping benchmark.")
+            return
         
     df = pd.read_csv(csv_path)
     texts = df['text'].tolist()
