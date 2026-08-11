@@ -55,7 +55,7 @@ def export_classifier_to_onnx(model_name="answerdotai/ModernBERT-base", output_d
         (inputs["input_ids"], inputs["attention_mask"]), 
         onnx_path, 
         export_params=True,
-        opset_version=14,
+        opset_version=18,  # ModernBERT requires newer opsets
         do_constant_folding=True,
         input_names=['input_ids', 'attention_mask'],
         output_names=['logits'],
@@ -89,7 +89,9 @@ def export_whisper_to_onnx(model_name="openai/whisper-tiny", output_dir="models/
                 local_file = os.path.join(root, file)
                 upload_to_dagshub(local_file, local_file)
     except subprocess.CalledProcessError as e:
-        print(f"[FAILED] Could not run optimum-cli. Ensure 'optimum[exporters]' is installed. Error: {e}")
+        print(f"[FAILED] optimum-cli failed. This usually means the ONNX exporter plugin is missing.")
+        print(f"--> FIX: Run `pip install \"optimum[exporters]\"` in your Kaggle notebook first!")
+        print(f"Error details: {e}")
     except FileNotFoundError:
         print(f"[FAILED] optimum-cli not found. Please run: pip install optimum[exporters]")
 
