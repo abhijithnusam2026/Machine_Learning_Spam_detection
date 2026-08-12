@@ -148,6 +148,19 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
                     print(f"Stripping {k} from {os.path.basename(sf_path)} to prevent GGUF collision...")
                     del tensors[k]
                 save_file(tensors, sf_path)
+                
+        # Update index json if it exists
+        index_path = os.path.join(stripped_dir, "model.safetensors.index.json")
+        if os.path.exists(index_path):
+            import json
+            with open(index_path, "r") as f:
+                index = json.load(f)
+            weight_map = index.get("weight_map", {})
+            keys_to_delete = [k for k in weight_map.keys() if k.startswith("classifier.")]
+            for k in keys_to_delete:
+                del weight_map[k]
+            with open(index_path, "w") as f:
+                json.dump(index, f, indent=2)
         
         local_model_dir = stripped_dir
     else:
