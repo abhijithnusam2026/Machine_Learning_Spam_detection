@@ -110,7 +110,22 @@ def quantize_classifier(model_name="models:/ModernBERT-Scam-Classifier-feature-p
     # or the user can provide a path to their downloaded Phase 1.5 weights.
     print("Loading original model...")
     try:
-        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        if model_name.startswith("models:/"):
+            print(f"Fetching '{model_name}' from DagsHub MLflow Registry...")
+            import mlflow
+            # Ensure DagsHub tracking is setup
+            repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+            repo_name = os.getenv("DAGSHUB_REPO_NAME")
+            if repo_owner and repo_name:
+                os.environ["MLFLOW_TRACKING_URI"] = f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow"
+            
+            local_model_path = mlflow.artifacts.download_artifacts(artifact_uri=model_name)
+            model_to_load = local_model_path
+            print(f"Downloaded model to {local_model_path}")
+        else:
+            model_to_load = model_name
+            
+        model = AutoModelForSequenceClassification.from_pretrained(model_to_load)
     except Exception as e:
         print(f"Failed to load {model_name}. Ensure it exists or is a valid HF repo. Error: {e}")
         return

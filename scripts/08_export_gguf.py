@@ -97,6 +97,38 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
                 save_file(tensors, sf_path)
         
         local_model_dir = stripped_dir
+    elif model_name.startswith("models:/"):
+        print(f"Fetching '{model_name}' from DagsHub MLflow Registry...")
+        import mlflow
+        load_dotenv()
+        repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+        repo_name = os.getenv("DAGSHUB_REPO_NAME")
+        if repo_owner and repo_name:
+            os.environ["MLFLOW_TRACKING_URI"] = f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow"
+        
+        local_model_dir = mlflow.artifacts.download_artifacts(artifact_uri=model_name)
+        print(f"Downloaded model to {local_model_dir}")
+        
+        # Need to strip the head just like the local model
+        import shutil
+        from safetensors.torch import load_file, save_file
+        
+        stripped_dir = local_model_dir + "_stripped"
+        if os.path.exists(stripped_dir):
+            shutil.rmtree(stripped_dir)
+        shutil.copytree(local_model_dir, stripped_dir)
+        
+        sf_path = os.path.join(stripped_dir, "model.safetensors")
+        if os.path.exists(sf_path):
+            tensors = load_file(sf_path)
+            to_delete = [k for k in tensors.keys() if k.startswith("classifier.")]
+            if to_delete:
+                for k in to_delete:
+                    print(f"Stripping {k} to prevent GGUF collision...")
+                    del tensors[k]
+                save_file(tensors, sf_path)
+        
+        local_model_dir = stripped_dir
     else:
         from huggingface_hub import snapshot_download
         print(f"Downloading {model_name} weights locally from HF Hub...")
