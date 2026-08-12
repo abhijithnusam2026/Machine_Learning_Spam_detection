@@ -27,7 +27,7 @@ def validate_exports():
         "GGUF Classifier (Q8_0)": f"artifacts/{stage}/gguf/classifier_q8_0.gguf",
         "GGUF Classifier (Q4_K_M)": f"artifacts/{stage}/gguf/classifier_q4_k_m.gguf",
         "GGUF Classifier (BF16)": f"artifacts/{stage}/gguf/classifier_bf16.gguf",
-        "GGML Whisper (F16)": f"artifacts/{stage}/ggml/ggml-tiny.bin",
+        "GGML Whisper (F16)": f"artifacts/{stage}/ggml/whisper_f16.bin",
         "GGML Whisper (Q8_0)": f"artifacts/{stage}/ggml/whisper_q8_0.bin",
         "GGML Whisper (Q4_K)": f"artifacts/{stage}/ggml/whisper_q4_k.bin",
         "GGML Whisper (BF16)": f"artifacts/{stage}/ggml/whisper_bf16.bin",
