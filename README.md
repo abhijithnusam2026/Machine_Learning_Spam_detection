@@ -13,9 +13,23 @@ By fine-tuning **DistilBERT** (`distilbert-base-uncased`), we achieve:
 
 *(See `notebooks/04_fine_tuning_justification.ipynb` for empirical and visual comparisons between baseline and fine-tuned models).*
 
+## Branch Strategy
+
+This repo is organized as a progression of branch buckets, and the scripts will mirror datasets, artifacts, and experiment runs into the matching bucket on DagsHub.
+
+| Git branch | Logical stage bucket | Purpose |
+| --- | --- | --- |
+| `model-distilbert` | `model-distilbert` | Base DistilBERT run on the initial data slice |
+| `feature/phase-1.5-ultimate-dataset` | `model-modernbert-universal` | Broader data pass with ModernBERT-style experiments |
+| `model-long-context` | `model-modernbert-universal` | Alias for the broader-data branch bucket |
+| `feature/phase-2-audio-asr` | `feature/phase-2-audio-asr` | Transcript retraining, ASR, and audio evaluation |
+| `feature/phase-3-serving-quantization` | `feature/phase-3-serving-quantization` | Quantization, serving, and inference plumbing |
+
+Runs are logged to MLflow experiments named like `scam-detection/<stage>/<phase>`, so the DagsHub UI stays readable even when branches move in parallel.
+
 ## Data Pipeline
 
-1. **Download**: Raw composite datasets are pulled idempotently via `scripts/download.py`.
+1. **Download**: Raw composite datasets are pulled idempotently via `scripts/download.py` and mirrored to the matching DagsHub branch bucket.
 2. **Preprocess**: Text is strictly deduplicated, stripped of leaky quote artifacts, and heuristically audited for label noise via `scripts/preprocess.py`.
 3. **Baseline**: Classical ML models (TF-IDF + Logistic Regression / LightGBM) are trained as a benchmark via `scripts/train_baseline.py`.
 4. **Fine-Tuning**: DistilBERT is trained with FP16 mixed-precision and strict random seeding via `scripts/train_scam_classifier.py`.
@@ -50,6 +64,15 @@ make all
 ```
 
 *(Alternatively, run individual steps: `make download`, `make preprocess`, `make baseline`, `make train`)*
+
+When running from the branch buckets directly, the scripts accept a `--branch` flag so you can keep the DagsHub uploads aligned with the branch you are working on:
+
+```bash
+python scripts/download.py --branch model-distilbert
+python scripts/preprocess.py --branch model-distilbert
+python scripts/train_baseline.py --train_data data/model-distilbert/processed/composite_train.csv --test_data data/model-distilbert/processed/composite_test.csv --branch model-distilbert
+python scripts/train_scam_classifier.py --train_data data/model-distilbert/processed/composite_train.csv --test_data data/model-distilbert/processed/composite_test.csv --branch model-distilbert
+```
 
 ---
 

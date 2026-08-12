@@ -28,9 +28,22 @@ env/
 data/raw/*
 data/processed/*
 data/synthetic/*
+data/asr_transcripts/
+data/legacy_composite/
+data/phase1/
+data/phase1.5/
+data/phase2_asr/
+data/raw_audio/
+data/raw_external/
+data/raw_jsons/
+data/raw_teeconnie/
+data/train.csv
+data/test.csv
+data/val.csv
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/synthetic/.gitkeep
+!data/.gitkeep
 checkpoints/
 artifacts/
 models/
@@ -38,6 +51,7 @@ outputs/
 runs/
 wandb/
 mlruns/
+reports/
 lightning_logs/
 
 # Model files
