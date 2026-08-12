@@ -83,10 +83,15 @@ def export_classifier_to_gguf(model_name="answerdotai/ModernBERT-base", output_d
     # 2. Quantize to Q8_0
     q8_path = os.path.join(output_dir, "classifier_q8_0.gguf")
     
-    # Locate the compiled llama-quantize binary
-    quantize_bin = "./llama.cpp/build/bin/llama-quantize"
-    if not os.path.exists(quantize_bin):
-        quantize_bin = "./llama.cpp/build/llama-quantize"
+    # Locate the compiled llama-quantize binary dynamically
+    quantize_bin = None
+    for root, dirs, files in os.walk("./llama.cpp/build"):
+        if "llama-quantize" in files:
+            quantize_bin = os.path.join(root, "llama-quantize")
+            break
+            
+    if not quantize_bin:
+        raise FileNotFoundError("Could not find compiled llama-quantize binary in ./llama.cpp/build")
         
     print(f"Quantizing to Q8_0...")
     run_cmd([quantize_bin, f16_path, q8_path, "Q8_0"])
@@ -148,10 +153,15 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     # 4. Quantize to Q8_0
     q8_path = os.path.join(output_dir, f"whisper_q8_0.bin")
     
-    # Locate the compiled whisper quantize binary
-    quantize_bin = "./whisper.cpp/build/bin/whisper-quantize"
-    if not os.path.exists(quantize_bin):
-        quantize_bin = "./whisper.cpp/build/whisper-quantize"
+    # Locate the compiled whisper quantize binary dynamically
+    quantize_bin = None
+    for root, dirs, files in os.walk("./whisper.cpp/build"):
+        if "whisper-quantize" in files:
+            quantize_bin = os.path.join(root, "whisper-quantize")
+            break
+            
+    if not quantize_bin:
+        raise FileNotFoundError("Could not find compiled whisper-quantize binary in ./whisper.cpp/build")
         
     print(f"Quantizing {model_name} to Q8_0...")
     try:
