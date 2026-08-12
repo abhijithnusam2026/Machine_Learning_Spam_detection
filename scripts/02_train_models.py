@@ -128,7 +128,7 @@ def main():
             local_model_path = mlflow.artifacts.download_artifacts(artifact_uri=args.model_name)
             print(f"  [SUCCESS] Model downloaded to {local_model_path}")
             print(f"  Loading components via MLflow...")
-            components = mlflow.transformers.load_model(local_model_path)
+            components = mlflow.transformers.load_model(local_model_path, return_type="components")
             tokenizer = components["tokenizer"]
             model = components["model"]
             model.to(device)
