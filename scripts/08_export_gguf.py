@@ -137,10 +137,38 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
         url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
         urllib.request.urlretrieve(url, f16_path)
     
+    # 4. Quantize to Q8_0
+    q8_path = os.path.join(output_dir, f"whisper_q8_0.bin")
+    
+    # Locate the compiled whisper quantize binary
+    quantize_bin = "./whisper.cpp/build/bin/quantize"
+    if not os.path.exists(quantize_bin):
+        quantize_bin = "./whisper.cpp/build/quantize"
+        
+    print(f"Quantizing {model_name} to Q8_0...")
+    try:
+        run_cmd([quantize_bin, f16_path, q8_path, "q8_0"])
+    except Exception as e:
+        print(f"[WARNING] Whisper quantization failed: {e}")
+    
+    # 5. Quantize to Q4_K
+    q4_path = os.path.join(output_dir, f"whisper_q4_k.bin")
+    print(f"Quantizing {model_name} to Q4_K...")
+    try:
+        run_cmd([quantize_bin, f16_path, q4_path, "q4_k"])
+    except Exception as e:
+        print(f"[WARNING] Whisper quantization failed: {e}")
+        
     # Upload F16
     if os.path.exists(f16_path):
         print(f"[SUCCESS] Generated: {f16_path} ({os.path.getsize(f16_path) / (1024*1024):.2f} MB)")
         upload_to_dagshub(f16_path, f16_path)
+        
+    # Upload Quantized
+    for qpath in [q8_path, q4_path]:
+        if os.path.exists(qpath):
+            print(f"[SUCCESS] Generated: {qpath} ({os.path.getsize(qpath) / (1024*1024):.2f} MB)")
+            upload_to_dagshub(qpath, qpath)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
