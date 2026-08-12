@@ -120,8 +120,22 @@ def main():
     train_ds = Dataset.from_pandas(train_df.reset_index(drop=True))
     val_ds = Dataset.from_pandas(test_df.reset_index(drop=True))
 
-    # 2. Tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    # 2. Tokenizer and Model Loading (Stateless MLflow Support)
+    # If the user passes an MLflow registry URI (e.g., models:/ModernBERT-base-Scam-Classifier/latest), download it.
+    if args.model_name.startswith("models:/"):
+        print(f"Stateless fetch: Downloading '{args.model_name}' from DagsHub MLflow Registry...")
+        try:
+            local_model_path = mlflow.artifacts.download_artifacts(artifact_uri=args.model_name)
+            model_name_to_load = local_model_path
+            print(f"  [SUCCESS] Model downloaded to {local_model_path}")
+        except Exception as e:
+            print(f"ERROR: Failed to download model from MLflow: {e}")
+            import sys
+            sys.exit(1)
+    else:
+        model_name_to_load = args.model_name
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name_to_load)
     
     max_len = tokenizer.model_max_length
     if max_len > 100000:
@@ -137,7 +151,7 @@ def main():
 
     # 3. Model
     model = AutoModelForSequenceClassification.from_pretrained(
-        args.model_name, num_labels=2
+        model_name_to_load, num_labels=2
     )
     model.to(device)
 
