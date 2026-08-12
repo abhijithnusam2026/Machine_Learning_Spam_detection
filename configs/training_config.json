@@ -1,7 +1,7 @@
 {
     "model_name": "answerdotai/ModernBERT-base",
     "output_dir": "./scam-classifier-model",
-    "mlflow_experiment": "scam-detection-ultimate",
+    "mlflow_experiment": "scam-detection/model-modernbert-universal/train",
     "epochs": 3,
     "batch_size": 16,
     "learning_rate": 2e-5,
@@ -11,8 +11,8 @@
         "train_local": "data/phase1.5/train.csv",
         "val_local": "data/phase1.5/val.csv",
         "test_local": "data/phase1.5/test.csv",
-        "train_remote": "data/phase1.5/train.csv",
-        "val_remote": "data/phase1.5/val.csv",
-        "test_remote": "data/phase1.5/test.csv"
+        "train_remote": "data/model-modernbert-universal/phase1.5/train.csv",
+        "val_remote": "data/model-modernbert-universal/phase1.5/val.csv",
+        "test_remote": "data/model-modernbert-universal/phase1.5/test.csv"
     }
 }

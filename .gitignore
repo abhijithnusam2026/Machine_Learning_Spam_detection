@@ -36,6 +36,7 @@ runs/
 wandb/
 mlruns/
 lightning_logs/
+reports/
 
 # Model files
 *.bin

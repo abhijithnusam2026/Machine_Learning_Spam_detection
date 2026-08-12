@@ -12,6 +12,9 @@ import random
 import re
 import glob
 import zipfile
+import subprocess
+from pathlib import Path
+
 import pandas as pd
 import dagshub
 from datasets import load_dataset
@@ -19,8 +22,37 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 SEED = 42
 random.seed(SEED)
+
+BRANCH_STAGE_MAP = {
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
 
 def clean_text(text):
     text = str(text)
@@ -145,6 +177,8 @@ def load_kaggle_datasets(s3_client, repo_name):
     return df_external
 
 def main():
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
     repo_name = os.getenv("DAGSHUB_REPO_NAME")
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
@@ -252,17 +286,19 @@ def main():
     print(f"Test (20%): {len(test_df)} rows")
     
     # --- 5. Save & Upload ---
-    os.makedirs("data/phase1.5", exist_ok=True)
-    train_df.to_csv("data/phase1.5/train.csv", index=False)
-    val_df.to_csv("data/phase1.5/val.csv", index=False)
-    test_df.to_csv("data/phase1.5/test.csv", index=False)
+    local_dir = Path("data/phase1.5")
+    os.makedirs(local_dir, exist_ok=True)
+    train_df.to_csv(local_dir / "train.csv", index=False)
+    val_df.to_csv(local_dir / "val.csv", index=False)
+    test_df.to_csv(local_dir / "test.csv", index=False)
     print("\nSaved locally.")
-    
-    print(f"\nUploading Ultimate Datasets directly to DagsHub ({repo_id})...")
+
+    remote_dir = f"data/{stage}/phase1.5"
+    print(f"\nUploading Ultimate Datasets directly to DagsHub ({repo_id}) under {remote_dir}...")
     try:
-        dagshub.upload_files(repo_id, local_path="data/phase1.5/train.csv", remote_path="data/phase1.5/train.csv", bucket=True)
-        dagshub.upload_files(repo_id, local_path="data/phase1.5/val.csv", remote_path="data/phase1.5/val.csv", bucket=True)
-        dagshub.upload_files(repo_id, local_path="data/phase1.5/test.csv", remote_path="data/phase1.5/test.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path=str(local_dir / "train.csv"), remote_path=f"{remote_dir}/train.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path=str(local_dir / "val.csv"), remote_path=f"{remote_dir}/val.csv", bucket=True)
+        dagshub.upload_files(repo_id, local_path=str(local_dir / "test.csv"), remote_path=f"{remote_dir}/test.csv", bucket=True)
         print("Successfully uploaded to DagsHub Storage Bucket!")
     except Exception as e:
         print(f"Failed to upload to DagsHub: {e}")

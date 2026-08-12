@@ -1,24 +1,36 @@
-# Scam Alert System (DistilBERT Fine-Tuning)
+# Scam Alert System (ModernBERT Phase 1.5)
 
-An end-to-end Machine Learning pipeline for automated scam transcript detection. This project utilizes lightweight NLP models (DistilBERT) for rapid, domain-specific inference.
+An end-to-end Machine Learning pipeline for automated scam transcript detection. This branch extends the baseline DistilBERT work with a broader ModernBERT stage that pulls in more non-transcript call-center data and writes all runs and artifacts to the `model-modernbert-universal` bucket on DagsHub.
 
 ## Objective
 
 Detect malicious or fraudulent intents in call transcripts and messages. Pre-trained models (like `facebook/bart-large-mnli`) lack domain-specific vocabulary and struggle with Domain Mismatch Leakage, making them computationally heavy and easily fooled by adversarial keyword stuffing.
 
-By fine-tuning **DistilBERT** (`distilbert-base-uncased`), we achieve:
-1. **99.8% Test Set Accuracy** (F1: 99.8%, PR-AUC: 99.9%).
-2. Deep contextual understanding that defeats simple keyword stuffing.
-3. Sub-50ms inference latency, making it ideal for edge deployment.
+By fine-tuning **ModernBERT** (`answerdotai/ModernBERT-base`) on the expanded phase 1.5 dataset, we aim to:
+1. Improve recall on scam variants that were not present in the base branch.
+2. Keep inference practical for later quantization and serving stages.
+3. Preserve a clean DagsHub audit trail for data, metrics, and model registry entries.
 
 *(See `notebooks/04_fine_tuning_justification.ipynb` for empirical and visual comparisons between baseline and fine-tuned models).*
 
 ## Data Pipeline
 
-1. **Download**: Raw composite datasets are pulled idempotently via `scripts/download.py`.
-2. **Preprocess**: Text is strictly deduplicated, stripped of leaky quote artifacts, and heuristically audited for label noise via `scripts/preprocess.py`.
-3. **Baseline**: Classical ML models (TF-IDF + Logistic Regression / LightGBM) are trained as a benchmark via `scripts/train_baseline.py`.
-4. **Fine-Tuning**: DistilBERT is trained with FP16 mixed-precision and strict random seeding via `scripts/train_scam_classifier.py`.
+1. **Download**: Existing DagsHub datasets and external complements are pulled idempotently via `scripts/01_prep_data.py`.
+2. **Preprocess**: Non-transcript data is cleaned, deduplicated, balanced, and split 70/10/20 before upload to the branch bucket.
+3. **Baseline**: ModernBERT is trained from the stage-scoped config in `configs/training_config.json`.
+4. **Evaluation**: Cross-dataset evaluation and confusion-matrix logging are tracked via MLflow on DagsHub.
+
+## Branch Strategy
+
+| Git branch | Logical stage bucket | Purpose |
+| --- | --- | --- |
+| `model-distilbert` | `model-distilbert` | Base branch with the original DistilBERT pass |
+| `feature/phase-1.5-ultimate-dataset` | `model-modernbert-universal` | Broader non-transcript data on ModernBERT |
+| `model-long-context` | `model-modernbert-universal` | Alias for the broader-data stage bucket |
+| `feature/phase-2-audio-asr` | `feature/phase-2-audio-asr` | Transcript retraining and ASR/audio work |
+| `feature/phase-3-serving-quantization` | `feature/phase-3-serving-quantization` | Quantization, serving, and dynamic inference |
+
+The code in this branch writes its uploads and MLflow runs to `scam-detection/model-modernbert-universal/*`.
 
 ---
 
@@ -44,12 +56,14 @@ HF_TOKEN="hf_..."
 ```
 
 **2. Run the Entire Pipeline**
-Use the `Makefile` to automatically orchestrate the download, preprocessing, baselines, and DistilBERT training in the correct order:
+Use the `Makefile` to automatically orchestrate the download, preprocessing, baselines, and ModernBERT training in the correct order:
 ```bash
 make all
 ```
 
 *(Alternatively, run individual steps: `make download`, `make preprocess`, `make baseline`, `make train`)*
+
+The branch-scoped scripts already default to the `model-modernbert-universal` bucket in DagsHub. If you want to be explicit, you can set `DAGSHUB_BRANCH=feature/phase-1.5-ultimate-dataset` in your environment.
 
 ---
 

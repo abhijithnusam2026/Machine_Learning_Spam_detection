@@ -8,6 +8,9 @@ Usage:
 import os
 import json
 import random
+import subprocess
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
@@ -18,6 +21,35 @@ import seaborn as sns
 from dotenv import load_dotenv
 
 load_dotenv()
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRANCH_STAGE_MAP = {
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
 
 from datasets import Dataset
 from sklearn.metrics import (
@@ -150,6 +182,8 @@ def main():
         
     with open(config_path, "r") as f:
         config = json.load(f)
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
 
     # Reproducibility
     seed = 42
@@ -250,9 +284,11 @@ def main():
     print(f"Setting MLflow experiment to '{config['mlflow_experiment']}'...")
     mlflow.set_experiment(config["mlflow_experiment"])
     
-    with mlflow.start_run():
+    with mlflow.start_run(run_name=f"{stage}-train"):
         # Log config
         mlflow.log_dict(config, "configs/training_config.json")
+        mlflow.set_tag("project_stage", stage)
+        mlflow.set_tag("git_branch", branch)
         
         # Train
         trainer.train()
@@ -288,11 +324,11 @@ def main():
             "tokenizer": tokenizer,
         }
         clean_model_name = config["model_name"].split("/")[-1]
-        registry_name = f"{clean_model_name}-Scam-Classifier"
+        registry_name = f"{clean_model_name}-Scam-Classifier-{stage}"
         
         mlflow.transformers.log_model(
             transformers_model=components,
-            artifact_path=clean_model_name,
+            artifact_path=f"{stage}/{clean_model_name}",
             registered_model_name=registry_name
         )
         print(f"Model successfully registered to DagsHub Model Registry as '{registry_name}'!")
