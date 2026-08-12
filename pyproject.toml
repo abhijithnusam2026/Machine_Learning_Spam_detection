@@ -31,6 +31,7 @@ dependencies = [
   "youtube-transcript-api>=0.6.3",
   "gguf>=0.10.0",
   "llama-cpp-python>=0.2.79",
+  "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]

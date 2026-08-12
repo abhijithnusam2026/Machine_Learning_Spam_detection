@@ -126,16 +126,24 @@ def main():
         print(f"Stateless fetch: Downloading '{args.model_name}' from DagsHub MLflow Registry...")
         try:
             local_model_path = mlflow.artifacts.download_artifacts(artifact_uri=args.model_name)
-            model_name_to_load = local_model_path
             print(f"  [SUCCESS] Model downloaded to {local_model_path}")
+            print(f"  Loading components via MLflow...")
+            components = mlflow.transformers.load_model(local_model_path)
+            tokenizer = components["tokenizer"]
+            model = components["model"]
+            model.to(device)
+            # We must set this so metrics tracking knows the original architecture name
+            args.model_name = "ModernBERT" 
         except Exception as e:
-            print(f"ERROR: Failed to download model from MLflow: {e}")
+            print(f"ERROR: Failed to load model from MLflow: {e}")
             import sys
             sys.exit(1)
     else:
-        model_name_to_load = args.model_name
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name_to_load)
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(
+            args.model_name, num_labels=2
+        )
+        model.to(device)
     
     max_len = tokenizer.model_max_length
     if max_len > 100000:
@@ -148,12 +156,6 @@ def main():
 
     train_ds = train_ds.map(tokenize_fn, batched=True)
     val_ds = val_ds.map(tokenize_fn, batched=True)
-
-    # 3. Model
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_name_to_load, num_labels=2
-    )
-    model.to(device)
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
