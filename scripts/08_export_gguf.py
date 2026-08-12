@@ -119,7 +119,7 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
         run_cmd(["git", "clone", "https://github.com/ggerganov/whisper.cpp.git"])
         # Compile the quantize tool using CMake
         run_cmd(["cmake", "-B", "build"], cwd="whisper.cpp")
-        run_cmd(["cmake", "--build", "build", "--config", "Release", "-j", "--target", "quantize"], cwd="whisper.cpp")
+        run_cmd(["cmake", "--build", "build", "--config", "Release", "-j", "--target", "whisper-quantize"], cwd="whisper.cpp")
 
     from huggingface_hub import snapshot_download
     print(f"Downloading {model_name} weights locally...")
@@ -149,9 +149,9 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     q8_path = os.path.join(output_dir, f"whisper_q8_0.bin")
     
     # Locate the compiled whisper quantize binary
-    quantize_bin = "./whisper.cpp/build/bin/quantize"
+    quantize_bin = "./whisper.cpp/build/bin/whisper-quantize"
     if not os.path.exists(quantize_bin):
-        quantize_bin = "./whisper.cpp/build/quantize"
+        quantize_bin = "./whisper.cpp/build/whisper-quantize"
         
     print(f"Quantizing {model_name} to Q8_0...")
     try:
