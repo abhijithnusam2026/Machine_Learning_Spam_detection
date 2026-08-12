@@ -55,8 +55,8 @@ def get_device():
         return "cuda"
     return "cpu"
 
-def load_legacy_data():
-    """Downloads and merges the entire legacy composite dataset from DagsHub S3."""
+def load_test_data(stage):
+    """Downloads the mathematically balanced 20% held-out test set from DagsHub S3."""
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
     repo_name = os.getenv("DAGSHUB_REPO_NAME")
     
@@ -64,21 +64,23 @@ def load_legacy_data():
         raise ValueError("Missing DAGSHUB_REPO_OWNER or DAGSHUB_REPO_NAME in .env")
         
     s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
-    os.makedirs("data/legacy_composite", exist_ok=True)
+    local_dir = f"data/{stage}/phase1.5"
+    os.makedirs(local_dir, exist_ok=True)
     
-    csv1 = "data/legacy_composite/composite_train.csv"
-    csv2 = "data/legacy_composite/composite_test.csv"
+    test_csv = f"{local_dir}/test.csv"
     
-    print("Downloading legacy datasets from DagsHub S3...")
-    s3_client.download_file(repo_name, csv1, csv1)
-    s3_client.download_file(repo_name, csv2, csv2)
+    print(f"Downloading held-out test dataset from DagsHub S3: {test_csv}...")
+    try:
+        s3_client.download_file(repo_name, test_csv, test_csv)
+    except Exception as e:
+        print(f"Warning: Could not download {test_csv} from DagsHub. Exception: {e}")
     
-    df1 = pd.read_csv(csv1)
-    df2 = pd.read_csv(csv2)
-    df_all = pd.concat([df1, df2], ignore_index=True)
-    
-    print(f"Loaded legacy dataset: {len(df_all)} rows.")
-    return df_all
+    if not os.path.exists(test_csv):
+        raise FileNotFoundError(f"Could not find test dataset at {test_csv}. Run 01_prep_data.py first.")
+        
+    df_test = pd.read_csv(test_csv)
+    print(f"Loaded held-out test dataset: {len(df_test)} rows.")
+    return df_test
 
 def main():
     load_dotenv()
@@ -112,7 +114,7 @@ def main():
     
     # 1. Download & Load Data
     try:
-        df = load_legacy_data()
+        df = load_test_data(stage)
     except Exception as e:
         print(f"Failed to load legacy data: {e}")
         return
