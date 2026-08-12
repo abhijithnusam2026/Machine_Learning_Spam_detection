@@ -67,9 +67,13 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
     # Clone llama.cpp if not exists
     if not os.path.exists("llama.cpp"):
         run_cmd(["git", "clone", "https://github.com/ggerganov/llama.cpp.git"])
-        # Compile the quantization tool using CMake
+    
+    # Compile the quantization tool using CMake (always run to ensure it exists)
+    try:
         run_cmd(["cmake", "-B", "build"], cwd="llama.cpp")
         run_cmd(["cmake", "--build", "build", "--config", "Release", "-j", "--target", "llama-quantize"], cwd="llama.cpp")
+    except Exception as e:
+        print(f"Warning: llama.cpp build failed: {e}")
 
     # Determine if model_name is a local path or HF repo
     if os.path.exists(model_name):
@@ -219,9 +223,13 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     # 1. Clone whisper.cpp
     if not os.path.exists("whisper.cpp"):
         run_cmd(["git", "clone", "https://github.com/ggerganov/whisper.cpp.git"])
-        # Compile the quantize tool using CMake
+    
+    # Compile the quantize tool using CMake (always run to ensure it exists)
+    try:
         run_cmd(["cmake", "-B", "build"], cwd="whisper.cpp")
         run_cmd(["cmake", "--build", "build", "--config", "Release", "-j", "--target", "whisper-quantize"], cwd="whisper.cpp")
+    except Exception as e:
+        print(f"Warning: whisper.cpp build failed: {e}")
 
     from huggingface_hub import snapshot_download
     print(f"Downloading {model_name} weights locally...")
