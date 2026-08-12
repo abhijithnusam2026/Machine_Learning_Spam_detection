@@ -5,6 +5,7 @@ Quantizes them to F16, Q8_0, and Q4_K_M.
 """
 
 import os
+import argparse
 import subprocess
 import dagshub
 from dotenv import load_dotenv
@@ -38,10 +39,14 @@ def export_classifier_to_gguf(model_name="answerdotai/ModernBERT-base", output_d
         # Compile the quantization tool
         run_cmd(["make", "-j", "llama-quantize"], cwd="llama.cpp")
 
-    # The modernbert model must be downloaded locally first to convert it
-    from huggingface_hub import snapshot_download
-    print(f"Downloading {model_name} weights locally...")
-    local_model_dir = snapshot_download(repo_id=model_name)
+    # Determine if model_name is a local path or HF repo
+    if os.path.exists(model_name):
+        print(f"Using local model directory: {model_name}")
+        local_model_dir = model_name
+    else:
+        from huggingface_hub import snapshot_download
+        print(f"Downloading {model_name} weights locally from HF Hub...")
+        local_model_dir = snapshot_download(repo_id=model_name)
     
     # 1. Convert to F16 GGUF
     f16_path = os.path.join(output_dir, "classifier_f16.gguf")
@@ -105,5 +110,10 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
         upload_to_dagshub(f16_path, f16_path)
 
 if __name__ == "__main__":
-    export_classifier_to_gguf()
-    export_whisper_to_ggml()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, default="answerdotai/ModernBERT-base")
+    parser.add_argument("--whisper_name", type=str, default="openai/whisper-tiny")
+    args = parser.parse_args()
+    
+    export_classifier_to_gguf(model_name=args.model_name)
+    export_whisper_to_ggml(model_name=args.whisper_name)

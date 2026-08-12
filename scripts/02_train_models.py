@@ -265,7 +265,8 @@ def main():
         mlflow.transformers.log_model(
             transformers_model=components,
             artifact_path=clean_model_name,
-            registered_model_name=registry_name
+            registered_model_name=registry_name,
+            task="text-classification"
         )
         print(f"Model successfully registered to DagsHub Model Registry as '{registry_name}'!")
 
