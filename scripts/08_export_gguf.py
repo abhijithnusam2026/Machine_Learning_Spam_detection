@@ -44,6 +44,28 @@ def export_classifier_to_gguf(model_name="answerdotai/ModernBERT-base", output_d
     if os.path.exists(model_name):
         print(f"Using local model directory: {model_name}")
         local_model_dir = model_name
+        
+        # FIX: llama.cpp has a bug where it maps both classifier.dense.weight and classifier.out_proj.weight to cls.weight
+        # Since llama-cpp-python only uses the embedding for BERT models anyway, we strip the classifier head to prevent collisions.
+        import shutil
+        from safetensors.torch import load_file, save_file
+        
+        stripped_dir = local_model_dir + "_stripped"
+        if os.path.exists(stripped_dir):
+            shutil.rmtree(stripped_dir)
+        shutil.copytree(local_model_dir, stripped_dir)
+        
+        sf_path = os.path.join(stripped_dir, "model.safetensors")
+        if os.path.exists(sf_path):
+            tensors = load_file(sf_path)
+            to_delete = [k for k in tensors.keys() if k.startswith("classifier.")]
+            if to_delete:
+                for k in to_delete:
+                    print(f"Stripping {k} to prevent GGUF collision...")
+                    del tensors[k]
+                save_file(tensors, sf_path)
+        
+        local_model_dir = stripped_dir
     else:
         from huggingface_hub import snapshot_download
         print(f"Downloading {model_name} weights locally from HF Hub...")
