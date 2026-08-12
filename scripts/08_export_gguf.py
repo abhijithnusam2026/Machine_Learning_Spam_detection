@@ -107,24 +107,45 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
             os.environ["MLFLOW_TRACKING_URI"] = f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow"
         
         local_model_dir = mlflow.artifacts.download_artifacts(artifact_uri=model_name)
-        print(f"Downloaded model to {local_model_dir}")
+        print(f"Downloaded MLflow artifact to {local_model_dir}")
         
-        # Need to strip the head just like the local model
+        # MLflow saves the HF model in the "model" subdirectory and tokenizer in "components/tokenizer"
         import shutil
+        import glob
         from safetensors.torch import load_file, save_file
         
         stripped_dir = local_model_dir + "_stripped"
         if os.path.exists(stripped_dir):
             shutil.rmtree(stripped_dir)
-        shutil.copytree(local_model_dir, stripped_dir)
+        os.makedirs(stripped_dir)
         
-        sf_path = os.path.join(stripped_dir, "model.safetensors")
-        if os.path.exists(sf_path):
+        # Copy model files
+        model_sub = os.path.join(local_model_dir, "model")
+        if os.path.exists(model_sub):
+            for item in os.listdir(model_sub):
+                s = os.path.join(model_sub, item)
+                d = os.path.join(stripped_dir, item)
+                if os.path.isdir(s): shutil.copytree(s, d)
+                else: shutil.copy2(s, d)
+        
+        # Copy tokenizer files
+        tok_sub = os.path.join(local_model_dir, "components", "tokenizer")
+        if os.path.exists(tok_sub):
+            for item in os.listdir(tok_sub):
+                s = os.path.join(tok_sub, item)
+                d = os.path.join(stripped_dir, item)
+                if not os.path.exists(d):  # don't overwrite
+                    if os.path.isdir(s): shutil.copytree(s, d)
+                    else: shutil.copy2(s, d)
+        
+        # Strip classification head from all safetensor files to prevent GGUF collision
+        sf_files = glob.glob(os.path.join(stripped_dir, "*.safetensors"))
+        for sf_path in sf_files:
             tensors = load_file(sf_path)
             to_delete = [k for k in tensors.keys() if k.startswith("classifier.")]
             if to_delete:
                 for k in to_delete:
-                    print(f"Stripping {k} to prevent GGUF collision...")
+                    print(f"Stripping {k} from {os.path.basename(sf_path)} to prevent GGUF collision...")
                     del tensors[k]
                 save_file(tensors, sf_path)
         
