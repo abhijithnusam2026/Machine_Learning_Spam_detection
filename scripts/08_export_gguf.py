@@ -95,9 +95,17 @@ def export_classifier_to_gguf(model_name="answerdotai/ModernBERT-base", output_d
     q4_path = os.path.join(output_dir, "classifier_q4_k_m.gguf")
     print(f"Quantizing to Q4_K_M...")
     run_cmd([quantize_bin, f16_path, q4_path, "Q4_K_M"])
+    
+    # 4. Quantize to BF16
+    bf16_path = os.path.join(output_dir, "classifier_bf16.gguf")
+    print(f"Quantizing to BF16...")
+    try:
+        run_cmd([quantize_bin, f16_path, bf16_path, "BF16"])
+    except Exception as e:
+        print(f"[WARNING] Classifier BF16 quantization failed: {e}")
 
     # Upload all
-    for f in [f16_path, q8_path, q4_path]:
+    for f in [f16_path, q8_path, q4_path, bf16_path]:
         if os.path.exists(f):
             print(f"[SUCCESS] Generated: {f} ({os.path.getsize(f) / (1024*1024):.2f} MB)")
             upload_to_dagshub(f, f)
@@ -159,13 +167,21 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     except Exception as e:
         print(f"[WARNING] Whisper quantization failed: {e}")
         
+    # 6. Quantize to BF16
+    bf16_path = os.path.join(output_dir, f"whisper_bf16.bin")
+    print(f"Quantizing {model_name} to BF16...")
+    try:
+        run_cmd([quantize_bin, f16_path, bf16_path, "bf16"])
+    except Exception as e:
+        print(f"[WARNING] Whisper BF16 quantization failed: {e}")
+        
     # Upload F16
     if os.path.exists(f16_path):
         print(f"[SUCCESS] Generated: {f16_path} ({os.path.getsize(f16_path) / (1024*1024):.2f} MB)")
         upload_to_dagshub(f16_path, f16_path)
         
     # Upload Quantized
-    for qpath in [q8_path, q4_path]:
+    for qpath in [q8_path, q4_path, bf16_path]:
         if os.path.exists(qpath):
             print(f"[SUCCESS] Generated: {qpath} ({os.path.getsize(qpath) / (1024*1024):.2f} MB)")
             upload_to_dagshub(qpath, qpath)

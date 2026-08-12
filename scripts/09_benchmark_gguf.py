@@ -65,9 +65,10 @@ def main():
     df = pd.read_csv(csv_path)
     texts = df['text'].tolist()
     
-    # Benchmark the 3 GGUF precision variants
+    # Benchmark the 4 GGUF precision variants
     models_to_test = {
         "F16": "models/gguf_classifier/classifier_f16.gguf",
+        "BF16": "models/gguf_classifier/classifier_bf16.gguf",
         "Q8_0": "models/gguf_classifier/classifier_q8_0.gguf",
         "Q4_K_M": "models/gguf_classifier/classifier_q4_k_m.gguf"
     }
