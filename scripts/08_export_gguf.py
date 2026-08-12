@@ -36,8 +36,9 @@ def export_classifier_to_gguf(model_name="answerdotai/ModernBERT-base", output_d
     # Clone llama.cpp if not exists
     if not os.path.exists("llama.cpp"):
         run_cmd(["git", "clone", "https://github.com/ggerganov/llama.cpp.git"])
-        # Compile the quantization tool
-        run_cmd(["make", "-j", "llama-quantize"], cwd="llama.cpp")
+        # Compile the quantization tool using CMake
+        run_cmd(["cmake", "-B", "build"], cwd="llama.cpp")
+        run_cmd(["cmake", "--build", "build", "--config", "Release", "-j", "--target", "llama-quantize"], cwd="llama.cpp")
 
     # Determine if model_name is a local path or HF repo
     if os.path.exists(model_name):
@@ -59,11 +60,19 @@ def export_classifier_to_gguf(model_name="answerdotai/ModernBERT-base", output_d
     
     # 2. Quantize to Q8_0
     q8_path = os.path.join(output_dir, "classifier_q8_0.gguf")
-    run_cmd(["./llama.cpp/llama-quantize", f16_path, q8_path, "q8_0"])
+    
+    # Locate the compiled llama-quantize binary
+    quantize_bin = "./llama.cpp/build/bin/llama-quantize"
+    if not os.path.exists(quantize_bin):
+        quantize_bin = "./llama.cpp/build/llama-quantize"
+        
+    print(f"Quantizing to Q8_0...")
+    run_cmd([quantize_bin, f16_path, q8_path, "Q8_0"])
     
     # 3. Quantize to Q4_K_M
     q4_path = os.path.join(output_dir, "classifier_q4_k_m.gguf")
-    run_cmd(["./llama.cpp/llama-quantize", f16_path, q4_path, "q4_k_m"])
+    print(f"Quantizing to Q4_K_M...")
+    run_cmd([quantize_bin, f16_path, q4_path, "Q4_K_M"])
 
     # Upload all
     for f in [f16_path, q8_path, q4_path]:
