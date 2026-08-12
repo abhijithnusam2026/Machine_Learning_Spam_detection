@@ -82,6 +82,7 @@ def main():
     print(f"Using device: {device}")
 
     # 0. Download data from DagsHub if needed
+    load_dotenv()
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
     repo_name = os.getenv("DAGSHUB_REPO_NAME")
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
@@ -95,12 +96,11 @@ def main():
     if repo_owner and repo_name:
         dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
         print(f"Fetching latest datasets from DagsHub S3 Bucket ({repo_owner}/{repo_name})...")
-        os.makedirs("data", exist_ok=True)
-        
         try:
             s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
             for file in [args.train_data, args.test_data]:
                 print(f"Downloading {file} from S3...")
+                os.makedirs(os.path.dirname(file), exist_ok=True)
                 s3_client.download_file(repo_name, file, file)
         except Exception as e:
             print(f"Warning: Failed to download datasets from S3 ({e}). Will try to use local copy if it exists.")
