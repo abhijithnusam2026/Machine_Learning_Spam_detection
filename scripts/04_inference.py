@@ -62,7 +62,7 @@ def main():
     args = parser.parse_args()
     branch = detect_branch()
     stage = stage_for_branch(branch)
-    registry_name = args.registry_name or f"ModernBERT-Scam-Classifier-{stage}"
+    registry_name = args.registry_name or f"ModernBERT-base-Scam-Classifier-{stage}"
 
     # DagsHub Auth
     username = os.environ.get("MLFLOW_TRACKING_USERNAME")

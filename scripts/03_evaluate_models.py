@@ -90,7 +90,7 @@ def main():
     args = parser.parse_args()
     branch = detect_branch()
     stage = stage_for_branch(branch)
-    registry_name = args.registry_name or f"ModernBERT-Scam-Classifier-{stage}"
+    registry_name = args.registry_name or f"ModernBERT-base-Scam-Classifier-{stage}"
     
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
     password = os.getenv("MLFLOW_TRACKING_PASSWORD")
