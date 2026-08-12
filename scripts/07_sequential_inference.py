@@ -1,14 +1,15 @@
-"""
-End-to-End Sequential Inference Pipeline.
-Accepts a raw .wav file, transcibes it via Whisper (INT8), and 
-classifies the transcript via ModernBERT (INT8 or FP16).
-"""
+"""End-to-end sequential inference for one audio file or a directory of clips."""
 
+import argparse
 import os
-import torch
-from transformers import WhisperProcessor, WhisperForConditionalGeneration
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import time
+from pathlib import Path
+
 import librosa
+import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import WhisperForConditionalGeneration, WhisperProcessor
+
 
 def transcribe_audio(audio_path, whisper_model, processor):
     print(f"Transcribing {audio_path}...")
@@ -37,68 +38,99 @@ def classify_text(text, classifier_model, tokenizer, device="cpu"):
     scam_prob = probs[0][1].item()
     return scam_prob
 
+
+def load_whisper_model(model_path):
+    if os.path.isdir(model_path):
+        print(f"Loading Whisper model from local directory: {model_path}")
+        processor = WhisperProcessor.from_pretrained(model_path)
+        whisper_model = WhisperForConditionalGeneration.from_pretrained(model_path)
+        return whisper_model, processor
+
+    if model_path.endswith((".pt", ".pth")) and os.path.exists(model_path):
+        print(f"Loading Whisper model from quantized checkpoint: {model_path}")
+        whisper_model = torch.load(model_path, map_location="cpu")
+        processor = WhisperProcessor.from_pretrained("openai/whisper-tiny")
+        return whisper_model, processor
+
+    print(f"Loading Whisper model from Hugging Face: {model_path}")
+    processor = WhisperProcessor.from_pretrained(model_path)
+    whisper_model = WhisperForConditionalGeneration.from_pretrained(model_path)
+    return whisper_model, processor
+
+
+def load_classifier_model(model_path, device):
+    if os.path.isdir(model_path):
+        print(f"Loading classifier from local directory: {model_path}")
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        model.to(device)
+        return model, tokenizer, device
+
+    if model_path.endswith((".pt", ".pth")) and os.path.exists(model_path):
+        print(f"Loading classifier from quantized checkpoint: {model_path}")
+        tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-base")
+        model = torch.load(model_path, map_location="cpu")
+        return model, tokenizer, "cpu"
+
+    print(f"Loading classifier from Hugging Face or registry-compatible path: {model_path}")
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForSequenceClassification.from_pretrained(model_path)
+    model.to(device)
+    return model, tokenizer, device
+
+
+def iter_audio_paths(audio_input):
+    path = Path(audio_input)
+    if path.is_dir():
+        return sorted([str(p) for p in path.glob("*.wav")])
+    return [str(path)]
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--audio_path", type=str, default="data/raw_audio/jNQXAC9IVRw.wav")
+    parser.add_argument("--whisper_model_path", type=str, default="openai/whisper-tiny")
+    parser.add_argument("--classifier_model_path", type=str, default="models/quantized_classifier/classifier_int8.pt")
+    args = parser.parse_args()
+
     print("Initializing Sequential Inference Pipeline...")
-    
-    # Audio Path
-    sample_audio = "data/raw_audio/jNQXAC9IVRw.wav" # Replace with actual path in prod
-    
+
     # Device routing
     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"Hardware Accelerator available: {device.upper()}")
     
-    # Load Whisper (Using FP32 for demo, but can load INT8 if needed)
     print("\nLoading Whisper Processor and Model...")
-    processor = WhisperProcessor.from_pretrained("openai/whisper-tiny")
-    whisper_model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny")
-    
-    # Load Classifier
+    whisper_model, processor = load_whisper_model(args.whisper_model_path)
+
     print("Loading Text Classifier...")
-    model_name = "answerdotai/ModernBERT-base"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    
-    # Load INT8 Model if it exists, otherwise fallback to FP32 on device
-    int8_path = "models/quantized_classifier/classifier_int8.pt"
-    if os.path.exists(int8_path):
-        print(f"Detected Quantized Model. Forcing execution to CPU.")
-        classifier_model = torch.load(int8_path, map_location="cpu")
-        active_device = "cpu"
-    else:
-        print(f"Quantized model not found. Loading FP32 and routing to {device.upper()}.")
-        classifier_model = AutoModelForSequenceClassification.from_pretrained(model_name)
-        classifier_model.to(device)
-        active_device = device
-        
+    classifier_model, tokenizer, active_device = load_classifier_model(args.classifier_model_path, device)
     classifier_model.eval()
-    
-    if not os.path.exists(sample_audio):
-        print(f"\n[INFO] Local audio file not found. Fetching a sample audio file on the fly...")
-        import urllib.request
-        os.makedirs(os.path.dirname(sample_audio), exist_ok=True)
-        # We download a public wave file just to test the E2E pipeline
-        url = "https://www2.cs.uic.edu/~i101/SoundFiles/BabyElephantWalk60.wav"
-        try:
-            urllib.request.urlretrieve(url, sample_audio)
-            print(f"  [SUCCESS] Downloaded sample to {sample_audio}")
-        except Exception as e:
-            print(f"  [FAILED] Could not download sample audio: {e}")
-            return
-        
-    # 1. Transcribe
-    transcript = transcribe_audio(sample_audio, whisper_model, processor)
-    print(f"  -> Extracted Text: {transcript}")
-    
-    # 2. Classify
-    scam_prob = classify_text(transcript, classifier_model, tokenizer, device=active_device)
-    
-    # 3. Output
-    print(f"\n=============================")
-    print(f"FINAL SCAM PROBABILITY: {scam_prob:.2%}")
-    if scam_prob > 0.5:
-        print(f"VERDICT: 🚨 SCAM ROBOCALL 🚨")
-    else:
-        print(f"VERDICT: ✅ LEGITIMATE CALL ✅")
-    print(f"=============================\n")
+
+    audio_paths = iter_audio_paths(args.audio_path)
+    if not audio_paths:
+        print(f"No audio files found under {args.audio_path}")
+        return
+
+    for audio_file in audio_paths:
+        if not os.path.exists(audio_file):
+            print(f"[WARNING] Audio file not found: {audio_file}")
+            continue
+
+        start = time.perf_counter()
+        transcript = transcribe_audio(audio_file, whisper_model, processor)
+        scam_prob = classify_text(transcript, classifier_model, tokenizer, device=active_device)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        print(f"  -> Extracted Text: {transcript}")
+        print(f"\n=============================")
+        print(f"FILE: {audio_file}")
+        print(f"FINAL SCAM PROBABILITY: {scam_prob:.2%}")
+        print(f"END-TO-END LATENCY: {elapsed_ms:.2f} ms")
+        if scam_prob > 0.5:
+            print(f"VERDICT: 🚨 SCAM ROBOCALL 🚨")
+        else:
+            print(f"VERDICT: ✅ LEGITIMATE CALL ✅")
+        print(f"=============================\n")
 
 if __name__ == "__main__":
     main()

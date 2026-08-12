@@ -7,14 +7,45 @@ Quantizes them to F16, Q8_0, and Q4_K_M.
 import os
 import argparse
 import subprocess
+from pathlib import Path
+
 import dagshub
 from dotenv import load_dotenv
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRANCH_STAGE_MAP = {
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
 
 def run_cmd(cmd, cwd=None):
     print(f"Running: {' '.join(cmd)}")
     subprocess.run(cmd, check=True, cwd=cwd)
 
-def upload_to_dagshub(local_path, s3_path):
+def upload_to_dagshub(local_path, remote_path, stage):
     load_dotenv()
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
     repo_name = os.getenv("DAGSHUB_REPO_NAME")
@@ -24,12 +55,12 @@ def upload_to_dagshub(local_path, s3_path):
             print(f"Uploading {local_path} to DagsHub S3...")
             dagshub.auth.add_app_token(token)
             s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
-            s3_client.upload_file(local_path, repo_name, s3_path)
-            print(f"  [SUCCESS] Uploaded to S3: {s3_path}")
+            s3_client.upload_file(local_path, repo_name, remote_path)
+            print(f"  [SUCCESS] Uploaded to S3: {remote_path}")
         except Exception as e:
             print(f"  [FAILED] S3 Upload failed: {e}")
 
-def export_classifier_to_gguf(model_name="answerdotai/ModernBERT-base", output_dir="models/gguf_classifier"):
+def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="models/gguf_classifier", stage="feature/phase-2-audio-asr"):
     print(f"\n--- Exporting Classifier ({model_name}) to GGUF ---")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -113,9 +144,9 @@ def export_classifier_to_gguf(model_name="answerdotai/ModernBERT-base", output_d
     for f in [f16_path, q8_path, q4_path, bf16_path]:
         if os.path.exists(f):
             print(f"[SUCCESS] Generated: {f} ({os.path.getsize(f) / (1024*1024):.2f} MB)")
-            upload_to_dagshub(f, f)
+            upload_to_dagshub(f, f"artifacts/{stage}/gguf/{os.path.basename(f)}", stage)
 
-def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/ggml_whisper"):
+def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/ggml_whisper", stage="feature/phase-2-audio-asr"):
     print(f"\n--- Exporting Whisper ({model_name}) to GGML ---")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -188,19 +219,21 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     # Upload F16
     if os.path.exists(f16_path):
         print(f"[SUCCESS] Generated: {f16_path} ({os.path.getsize(f16_path) / (1024*1024):.2f} MB)")
-        upload_to_dagshub(f16_path, f16_path)
+        upload_to_dagshub(f16_path, f"artifacts/{stage}/ggml/{os.path.basename(f16_path)}", stage)
         
     # Upload Quantized
     for qpath in [q8_path, q4_path, bf16_path]:
         if os.path.exists(qpath):
             print(f"[SUCCESS] Generated: {qpath} ({os.path.getsize(qpath) / (1024*1024):.2f} MB)")
-            upload_to_dagshub(qpath, qpath)
+            upload_to_dagshub(qpath, f"artifacts/{stage}/ggml/{os.path.basename(qpath)}", stage)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="answerdotai/ModernBERT-base")
+    parser.add_argument("--model_name", type=str, default="./scam-classifier-model")
     parser.add_argument("--whisper_name", type=str, default="openai/whisper-tiny")
     args = parser.parse_args()
-    
-    export_classifier_to_gguf(model_name=args.model_name)
-    export_whisper_to_ggml(model_name=args.whisper_name)
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
+
+    export_classifier_to_gguf(model_name=args.model_name, stage=stage)
+    export_whisper_to_ggml(model_name=args.whisper_name, stage=stage)

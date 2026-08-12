@@ -11,6 +11,9 @@ import pandas as pd
 import torch
 import os
 import random
+import subprocess
+from pathlib import Path
+
 import mlflow
 import requests
 import dagshub
@@ -18,6 +21,35 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRANCH_STAGE_MAP = {
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
 
 from datasets import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, average_precision_score, confusion_matrix
@@ -59,15 +91,22 @@ def compute_metrics(eval_pred):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_data", type=str, default="data/phase1/train.csv", help="Path to train CSV")
-    parser.add_argument("--test_data", type=str, default="data/phase1/test.csv", help="Path to test CSV")
-    parser.add_argument("--model_name", type=str, default="answerdotai/ModernBERT-base")
+    parser.add_argument("--train_data", type=str, default="data/phase2_asr/train.csv", help="Path to train CSV")
+    parser.add_argument("--test_data", type=str, default="data/phase2_asr/test.csv", help="Path to test CSV")
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default="models:/ModernBERT-Scam-Classifier-model-modernbert-universal/latest",
+    )
     parser.add_argument("--output_dir", type=str, default="./scam-classifier-model")
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--push_to_hub", action="store_true", help="Push model to Hugging Face Hub privately")
     args = parser.parse_args()
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
+    stage_slug = stage.replace("/", "-")
 
     # Enforce strict reproducibility
     seed = 42
@@ -101,7 +140,8 @@ def main():
             for file in [args.train_data, args.test_data]:
                 print(f"Downloading {file} from S3...")
                 os.makedirs(os.path.dirname(file), exist_ok=True)
-                s3_client.download_file(repo_name, file, file)
+                remote_path = f"data/{stage}/phase2_asr/{os.path.basename(file)}"
+                s3_client.download_file(repo_name, remote_path, file)
         except Exception as e:
             print(f"Warning: Failed to download datasets from S3 ({e}). Will try to use local copy if it exists.")
 
@@ -209,10 +249,12 @@ def main():
 
     # 5. Train
     print("Starting MLflow run to log datasets and metrics...")
-    mlflow.set_experiment("scam-detection-ablation")
-    with mlflow.start_run():
+    mlflow.set_experiment(f"scam-detection/{stage}/train")
+    with mlflow.start_run(run_name=f"{stage}-train"):
         mlflow.log_artifact(args.train_data, "dataset")
         mlflow.log_artifact(args.test_data, "dataset")
+        mlflow.set_tag("project_stage", stage)
+        mlflow.set_tag("git_branch", branch)
         trainer.train()
 
         # 6. Evaluate
@@ -260,11 +302,11 @@ def main():
         
         # Format the model name for the registry (e.g. "distilbert-base-uncased" -> "distilbert-base-uncased-Scam-Classifier")
         clean_model_name = args.model_name.split("/")[-1]
-        registry_name = f"{clean_model_name}-Scam-Classifier"
+        registry_name = f"{clean_model_name}-Scam-Classifier-{stage_slug}"
         
         mlflow.transformers.log_model(
             transformers_model=components,
-            artifact_path=clean_model_name,
+            artifact_path=f"{stage}/{clean_model_name}",
             registered_model_name=registry_name,
             task="text-classification"
         )

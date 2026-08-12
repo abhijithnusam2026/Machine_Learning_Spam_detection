@@ -5,6 +5,9 @@ Tests the ModernBERT model on the legacy Kaggle Composite dataset.
 
 import os
 import argparse
+import subprocess
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 import torch
@@ -15,6 +18,35 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, con
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRANCH_STAGE_MAP = {
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
 
 def get_device():
     if torch.backends.mps.is_available():
@@ -52,8 +84,12 @@ def main():
     load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", type=str, default="./scam-classifier-model", help="Path to model directory or 'mlflow' to pull from DagsHub")
-    parser.add_argument("--registry_name", type=str, default="ModernBERT-Scam-Classifier", help="Name of the model in DagsHub MLflow Registry (if --model_dir=mlflow)")
+    parser.add_argument("--registry_name", type=str, default=None, help="Name of the model in DagsHub MLflow Registry (if --model_dir=mlflow)")
     args = parser.parse_args()
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
+    stage_slug = stage.replace("/", "-")
+    registry_name = args.registry_name or f"ModernBERT-Scam-Classifier-{stage_slug}"
     
     username = os.getenv("MLFLOW_TRACKING_USERNAME")
     password = os.getenv("MLFLOW_TRACKING_PASSWORD")
@@ -92,10 +128,10 @@ def main():
     # 2. Load Model
     if args.model_dir == "mlflow":
         print("Fetching latest model from DagsHub MLflow registry...")
-        mlflow.set_experiment("scam-detection-ablation")
+        mlflow.set_experiment(f"scam-detection/{stage}/eval")
         
         # Load directly from the Model Registry
-        model_uri = f"models:/{args.registry_name}/latest"
+        model_uri = f"models:/{registry_name}/latest"
         print(f"Loading model from registry: {model_uri}")
         
         try:
@@ -179,18 +215,22 @@ def main():
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Legit', 'Scam'], yticklabels=['Legit', 'Scam'])
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
-    plt.title(f'Confusion Matrix - {args.registry_name}')
+    plt.title(f'Confusion Matrix - {registry_name}')
     
-    cm_path = f"confusion_matrix_{args.registry_name}.png"
+    report_dir = Path("reports") / stage
+    report_dir.mkdir(parents=True, exist_ok=True)
+    cm_path = report_dir / f"confusion_matrix_{registry_name}.png"
     plt.savefig(cm_path)
     print(f"\nSaved confusion matrix plot to {cm_path}")
     
     # Log the figure to MLflow if tracking is enabled
     if args.model_dir == "mlflow":
-        with mlflow.start_run(run_name=f"Evaluation-{args.registry_name}"):
+        with mlflow.start_run(run_name=f"{stage}-eval-{registry_name}"):
             mlflow.log_figure(plt.gcf(), "confusion_matrix.png")
             mlflow.log_metric("eval_accuracy_cross", acc)
             mlflow.log_metric("eval_f1_cross", f1)
+            mlflow.set_tag("project_stage", stage)
+            mlflow.set_tag("git_branch", branch)
             print("Logged evaluation metrics and confusion matrix to MLflow.")
             
     plt.close()

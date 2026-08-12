@@ -7,12 +7,45 @@ Aggregates, balances (1:1), and splits into Train/Val/Test/PTQ.
 
 import os
 import io
+import json
+import subprocess
+from pathlib import Path
+
 import requests
 import pandas as pd
 import dagshub
 from dotenv import load_dotenv
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRANCH_STAGE_MAP = {
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
 
 def fetch_ncsu_scam_data():
     """
@@ -81,7 +114,7 @@ def fetch_hf_legit_data():
     print(f"  [SUCCESS] Total legit transcripts extracted: {len(results)}")
     return results
 
-def split_and_upload(df, output_dir="data/phase2_asr"):
+def split_and_upload(df, output_dir="data/phase2_asr", stage="feature/phase-2-audio-asr"):
     """
     Splits the data into Train(60), Val(10), Test(20), PTQ(10) and uploads to S3.
     """
@@ -126,6 +159,18 @@ def split_and_upload(df, output_dir="data/phase2_asr"):
     val_df.to_csv(val_path, index=False)
     test_df.to_csv(test_path, index=False)
     ptq_df.to_csv(ptq_path, index=False)
+
+    manifest = {
+        "stage": stage,
+        "train_rows": len(train_df),
+        "val_rows": len(val_df),
+        "test_rows": len(test_df),
+        "ptq_rows": len(ptq_df),
+        "source": "ncsu_robocall + PolyAI/minds14",
+    }
+    manifest_path = os.path.join(output_dir, "manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
     
     # Upload to DagsHub S3
     print("\n--- Uploading to DagsHub S3 ---")
@@ -138,9 +183,11 @@ def split_and_upload(df, output_dir="data/phase2_asr"):
             dagshub.auth.add_app_token(os.getenv("MLFLOW_TRACKING_PASSWORD"))
             s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
             
-            for file_path in [train_path, val_path, test_path, ptq_path]:
+            remote_dir = f"data/{stage}/phase2_asr"
+            for file_path in [train_path, val_path, test_path, ptq_path, manifest_path]:
                 print(f"Uploading {file_path} to S3...")
-                s3_client.upload_file(file_path, repo_name, file_path)
+                remote_path = f"{remote_dir}/{os.path.basename(file_path)}"
+                s3_client.upload_file(file_path, repo_name, remote_path)
             print("Successfully backed up Phase 2 datasets to DagsHub S3!")
         except Exception as e:
             print(f"Failed to upload to S3: {e}")
@@ -149,6 +196,8 @@ def split_and_upload(df, output_dir="data/phase2_asr"):
 
 def main():
     print("Initializing Phase 2 Hybrid ASR Data Acquisition...\n")
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
     
     # 1. Fetch 1400+ Scams from NCSU
     scam_data = fetch_ncsu_scam_data()
@@ -176,7 +225,7 @@ def main():
     print(f"Saved {len(df)} raw transcripts to {raw_path}")
     
     # Generate splits and upload
-    split_and_upload(df)
+    split_and_upload(df, stage=stage)
 
 if __name__ == "__main__":
     main()

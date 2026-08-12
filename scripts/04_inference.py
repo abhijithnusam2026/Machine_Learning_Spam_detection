@@ -8,9 +8,41 @@ Usage:
 import argparse
 import torch
 import os
+import subprocess
+from pathlib import Path
+
 import mlflow
 from dotenv import load_dotenv
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRANCH_STAGE_MAP = {
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
 
 
 def get_device():
@@ -26,7 +58,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", type=str, default="mlflow", help="Path to local model, Hugging Face repo ID, or 'mlflow' to pull latest from DagsHub")
     parser.add_argument("--text", type=str, required=True)
+    parser.add_argument("--registry_name", type=str, default=None, help="Name of the model in DagsHub MLflow Registry when using --model_dir=mlflow")
     args = parser.parse_args()
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
+    stage_slug = stage.replace("/", "-")
+    registry_name = args.registry_name or f"ModernBERT-Scam-Classifier-{stage_slug}"
 
     # DagsHub Auth
     username = os.environ.get("MLFLOW_TRACKING_USERNAME")
@@ -50,10 +87,10 @@ def main():
     
     if args.model_dir == "mlflow":
         print("Fetching latest model from DagsHub MLflow registry...")
-        mlflow.set_experiment("scam-detection-ablation")
+        mlflow.set_experiment(f"scam-detection/{stage}/inference")
         
         # Load directly from the Model Registry instead of searching for runs
-        model_uri = "models:/ModernBERT-Scam-Classifier/latest"
+        model_uri = f"models:/{registry_name}/latest"
         print(f"Loading model from registry: {model_uri}")
         
         try:

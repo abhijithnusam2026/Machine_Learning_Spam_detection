@@ -1,21 +1,50 @@
-"""
-Applies PyTorch Dynamic Post-Training Quantization (INT8) to the ASR and Classifier models.
-"""
+"""Apply post-training quantization to the ASR and classifier models."""
 
 import os
-import os
+import subprocess
+from pathlib import Path
+
 import torch
 import warnings
 import dagshub
 from dotenv import load_dotenv
 from transformers import WhisperForConditionalGeneration, AutoModelForSequenceClassification
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRANCH_STAGE_MAP = {
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
 # Suppress warnings and set ARM quantization engine for Apple Silicon
 warnings.filterwarnings("ignore")
 if torch.backends.quantized.supported_engines and 'qnnpack' in torch.backends.quantized.supported_engines:
     torch.backends.quantized.engine = 'qnnpack'
 
-def upload_to_dagshub(local_path, s3_path):
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
+
+def upload_to_dagshub(local_path, remote_path, stage):
     """Uploads a local file to the DagsHub S3 bucket."""
     load_dotenv()
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
@@ -27,8 +56,8 @@ def upload_to_dagshub(local_path, s3_path):
             print(f"Uploading {local_path} to DagsHub S3...")
             dagshub.auth.add_app_token(token)
             s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
-            s3_client.upload_file(local_path, repo_name, s3_path)
-            print(f"  [SUCCESS] Uploaded to S3: {s3_path}")
+            s3_client.upload_file(local_path, repo_name, remote_path)
+            print(f"  [SUCCESS] Uploaded to S3: {remote_path}")
         except Exception as e:
             print(f"  [FAILED] S3 Upload failed: {e}")
     else:
@@ -46,7 +75,7 @@ def quantize_model(model):
     )
     return quantized_model
 
-def quantize_whisper(model_name="openai/whisper-tiny", output_dir="models/quantized_whisper"):
+def quantize_whisper(model_name="openai/whisper-tiny", output_dir="models/quantized_whisper", stage="feature/phase-2-audio-asr"):
     print(f"\n--- Quantizing Whisper ASR ({model_name}) ---")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -70,9 +99,9 @@ def quantize_whisper(model_name="openai/whisper-tiny", output_dir="models/quanti
     print(f"INT8 Saved File Size: {int8_size:.2f} MB")
     print(f"Saved to: {save_path}")
     
-    upload_to_dagshub(save_path, save_path)
+    upload_to_dagshub(save_path, f"artifacts/{stage}/quantization/whisper/{os.path.basename(save_path)}", stage)
 
-def quantize_classifier(model_name="answerdotai/ModernBERT-base", output_dir="models/quantized_classifier"):
+def quantize_classifier(model_name="models:/ModernBERT-Scam-Classifier-feature-phase-2-audio-asr/latest", output_dir="models/quantized_classifier", stage="feature/phase-2-audio-asr"):
     print(f"\n--- Quantizing Classifier ({model_name}) ---")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -102,11 +131,12 @@ def quantize_classifier(model_name="answerdotai/ModernBERT-base", output_dir="mo
     print(f"INT8 Saved File Size: {int8_size:.2f} MB")
     print(f"Saved to: {save_path}")
 
+    upload_to_dagshub(save_path, f"artifacts/{stage}/quantization/classifier/{os.path.basename(save_path)}", stage)
+
 if __name__ == "__main__":
     print("Initializing Post-Training Quantization (PTQ) Pipeline...\n")
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
     # Using tiny for fast local CPU execution
-    quantize_whisper(model_name="openai/whisper-tiny")
-    
-    # Assuming user might point this to their final Phase 1.5/2.0 weights later. 
-    # For now, we quantize the base architecture.
-    quantize_classifier(model_name="answerdotai/ModernBERT-base")
+    quantize_whisper(model_name="openai/whisper-tiny", stage=stage)
+    quantize_classifier(stage=stage)

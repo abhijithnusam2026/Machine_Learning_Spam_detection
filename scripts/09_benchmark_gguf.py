@@ -5,9 +5,41 @@ Logs metrics (Latency, Throughput) to DagsHub MLflow.
 
 import os
 import time
+import subprocess
+from pathlib import Path
+
 import pandas as pd
 import mlflow
 from dotenv import load_dotenv
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BRANCH_STAGE_MAP = {
+    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
+    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
+    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
+    "model-long-context": "model-modernbert-universal",
+    "model-distilbert": "model-distilbert",
+    "main": "main",
+}
+
+
+def detect_branch(default="main"):
+    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
+    if env_branch:
+        return env_branch.strip()
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    return branch or default
+
+
+def stage_for_branch(branch):
+    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
 
 def benchmark_gguf_latency(model_path, texts, num_runs=50):
     if not os.path.exists(model_path):
@@ -39,6 +71,8 @@ def benchmark_gguf_latency(model_path, texts, num_runs=50):
 def main():
     print("Initializing GGUF Benchmarking Pipeline...\n")
     load_dotenv()
+    branch = detect_branch()
+    stage = stage_for_branch(branch)
     
     # MLflow Setup
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
@@ -47,16 +81,17 @@ def main():
         import dagshub
         dagshub.init(repo_owner=repo_owner, repo_name=repo_name, mlflow=True)
     
-    mlflow.set_experiment("scam-detection-quantized")
+    mlflow.set_experiment(f"scam-detection/{stage}/gguf-benchmark")
     
     # Load dataset
     csv_path = "data/phase2_asr/ptq_calibration.csv"
     if not os.path.exists(csv_path):
         print(f"Data not found locally at {csv_path}. Fetching from DagsHub S3...")
         if repo_owner and repo_name:
+            import dagshub
             s3 = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
             os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-            s3.download_file(repo_name, csv_path, csv_path)
+            s3.download_file(repo_name, f"data/{stage}/phase2_asr/ptq_calibration.csv", csv_path)
             print("  [SUCCESS] Data downloaded.")
         else:
             print("  [FAILED] Cannot download data. Exiting.")
@@ -81,7 +116,7 @@ def main():
                 results[precision] = lat
     
     if results:
-        with mlflow.start_run(run_name="GGUF_llama.cpp_Benchmark"):
+        with mlflow.start_run(run_name=f"{stage}-gguf-benchmark"):
             for precision, lat in results.items():
                 mlflow.log_metric(f"gguf_{precision.lower()}_latency_ms", lat)
             print("\n[SUCCESS] Logged GGUF benchmarks to MLflow!")
