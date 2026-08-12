@@ -65,7 +65,10 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
     os.makedirs(output_dir, exist_ok=True)
     
     # Clone llama.cpp if not exists
-    if not os.path.exists("llama.cpp"):
+    if not os.path.exists("llama.cpp/CMakeLists.txt"):
+        if os.path.exists("llama.cpp"):
+            import shutil
+            shutil.rmtree("llama.cpp")
         run_cmd(["git", "clone", "https://github.com/ggerganov/llama.cpp.git"])
     
     # Compile the quantization tool using CMake (always run to ensure it exists)
@@ -221,7 +224,10 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     os.makedirs(output_dir, exist_ok=True)
     
     # 1. Clone whisper.cpp
-    if not os.path.exists("whisper.cpp"):
+    if not os.path.exists("whisper.cpp/CMakeLists.txt"):
+        if os.path.exists("whisper.cpp"):
+            import shutil
+            shutil.rmtree("whisper.cpp")
         run_cmd(["git", "clone", "https://github.com/ggerganov/whisper.cpp.git"])
     
     # Compile the quantize tool using CMake (always run to ensure it exists)
