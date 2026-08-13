@@ -96,7 +96,7 @@ def main():
     parser.add_argument(
         "--model_name",
         type=str,
-        default="models:/ModernBERT-Scam-Classifier-model-modernbert-universal/latest",
+        default="models:/ModernBERT-base-Scam-Classifier/latest",
     )
     parser.add_argument("--output_dir", type=str, default="./scam-classifier-model")
     parser.add_argument("--epochs", type=int, default=4)
