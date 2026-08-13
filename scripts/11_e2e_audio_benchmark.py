@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 
 def run_benchmark():
     load_dotenv()
-    owner = os.getenv("DAGSHUB_REPO_OWNER")
-    name = os.getenv("DAGSHUB_REPO_NAME")
+    owner = os.getenv("DAGSHUB_REPO_OWNER", "kureeltanishq")
+    name = os.getenv("DAGSHUB_REPO_NAME", "2026SU_MS_DSP_422-DL_SEC61_Machine_Learning_Spam_detection")
     dagshub.init(repo_name=name, repo_owner=owner, mlflow=True)
     mlflow.set_experiment("scam-detection/e2e-benchmark")
 

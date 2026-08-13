@@ -76,8 +76,8 @@ class InferencePipeline:
         import boto3
         from dotenv import load_dotenv
         load_dotenv()
-        owner = os.getenv("DAGSHUB_REPO_OWNER")
-        name = os.getenv("DAGSHUB_REPO_NAME")
+        owner = os.getenv("DAGSHUB_REPO_OWNER", "kureeltanishq")
+        name = os.getenv("DAGSHUB_REPO_NAME", "2026SU_MS_DSP_422-DL_SEC61_Machine_Learning_Spam_detection")
         s3 = boto3.client('s3', endpoint_url="https://dagshub.com/api/v1/repo-buckets/s3")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         s3.download_file(name, file_path, file_path)

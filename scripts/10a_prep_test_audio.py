@@ -29,8 +29,8 @@ def main():
         print(f"Saved {filename}")
 
     print("Uploading to DagsHub S3...")
-    owner = os.getenv("DAGSHUB_REPO_OWNER")
-    name = os.getenv("DAGSHUB_REPO_NAME")
+    owner = os.getenv("DAGSHUB_REPO_OWNER", "kureeltanishq")
+    name = os.getenv("DAGSHUB_REPO_NAME", "2026SU_MS_DSP_422-DL_SEC61_Machine_Learning_Spam_detection")
     s3 = boto3.client('s3', endpoint_url="https://dagshub.com/api/v1/repo-buckets/s3")
     bucket = name
 
