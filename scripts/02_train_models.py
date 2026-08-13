@@ -306,7 +306,7 @@ def main():
         
         mlflow.transformers.log_model(
             transformers_model=components,
-            artifact_path=f"{stage}/{clean_model_name}",
+            artifact_path=f"{stage_slug}-{clean_model_name}",
             registered_model_name=registry_name,
             task="text-classification"
         )
