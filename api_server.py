@@ -18,6 +18,21 @@ if os.path.exists(config_path):
         with open(config_path, "w") as f:
             json.dump(config, f, indent=4)
 
+# MLflow DagsHub Authentication
+from dotenv import load_dotenv
+import mlflow
+load_dotenv()
+owner = os.getenv("DAGSHUB_REPO_OWNER")
+name = os.getenv("DAGSHUB_REPO_NAME")
+token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+
+if owner and name and token:
+    import dagshub
+    dagshub.auth.add_app_token(token)
+    os.environ["MLFLOW_TRACKING_USERNAME"] = owner
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = token
+    mlflow.set_tracking_uri(f"https://dagshub.com/{owner}/{name}.mlflow")
+
 import importlib
 infer_module = importlib.import_module("scripts.10_inference_pipeline")
 pipeline = infer_module.InferencePipeline()
