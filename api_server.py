@@ -56,7 +56,8 @@ async def detect_scam(file: UploadFile = File(...)):
         f.write(await file.read())
         
     try:
-        res = pipeline.process_audio(file_path)
+        # Run blocking CPU/GPU task in a thread
+        res = await asyncio.to_thread(pipeline.process_audio, file_path)
         return res
     finally:
         if os.path.exists(file_path):
@@ -68,27 +69,36 @@ async def detect_stream(file: UploadFile = File(...)):
     file_path = f"data/uploads/{int(time.time())}_{file.filename}"
     with open(file_path, "wb") as f:
         f.write(await file.read())
+        
+    print(f"[API] Received audio file: {file.filename}")
 
     async def event_generator():
         try:
             # 1. Start Transcription
+            print("[API] Starting Transcription...")
             yield {"event": "status", "data": json.dumps({"step": "transcribing", "message": "Converting Audio to Text..."})}
-            await asyncio.sleep(0.1) # Yield control
+            await asyncio.sleep(0.1) # Yield control to flush message
             
             t0 = time.time()
-            transcript = pipeline._transcribe(file_path)
+            # Run blocking Whisper inference in a threadpool so we don't freeze the async event loop!
+            transcript = await asyncio.to_thread(pipeline._transcribe, file_path)
             asr_latency = time.time() - t0
+            print(f"[API] Transcription finished in {asr_latency:.3f}s: {transcript}")
             
             # 2. Transcription Finished
             yield {"event": "transcript", "data": json.dumps({"text": transcript, "latency": f"{asr_latency:.3f}s"})}
+            await asyncio.sleep(0.1)
             
             # 3. Start Classification
+            print("[API] Starting ModernBERT Classification...")
             yield {"event": "status", "data": json.dumps({"step": "classifying", "message": "Analyzing Intent via ModernBERT..."})}
             await asyncio.sleep(0.1)
             
             t1 = time.time()
-            prediction = pipeline._classify(transcript)
+            # Run blocking PyTorch classification in threadpool
+            prediction = await asyncio.to_thread(pipeline._classify, transcript)
             clf_latency = time.time() - t1
+            print(f"[API] Classification finished in {clf_latency:.3f}s: {prediction}")
             
             # 4. Final Result
             yield {"event": "result", "data": json.dumps({
@@ -98,10 +108,12 @@ async def detect_stream(file: UploadFile = File(...)):
                 "total_latency": asr_latency + clf_latency
             })}
         except Exception as e:
+            print(f"[API] ERROR: {e}")
             yield {"event": "error", "data": str(e)}
         finally:
             if os.path.exists(file_path):
                 os.remove(file_path)
+            print("[API] Cleaned up temporary file.")
 
     return EventSourceResponse(event_generator())
 
