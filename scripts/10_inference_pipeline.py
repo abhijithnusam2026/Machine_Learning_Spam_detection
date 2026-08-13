@@ -34,21 +34,15 @@ class InferencePipeline:
                                device=self.device)
         
         # Load Classifier
-        print(f"Loading FP16 Classifier: {self.config['fp16_classifier_model_name']}")
-        
-        # Use MLflow to fetch if it's a models:/ URI
         model_name = self.config['fp16_classifier_model_name']
+        print(f"Loading FP16 Classifier: {model_name}")
+        
         if model_name.startswith("models:/"):
             import mlflow
-            from mlflow.artifacts import download_artifacts
-            print("Downloading model from MLflow registry...")
-            local_dir = download_artifacts(artifact_uri=model_name)
-            
-            tokenizer_path = os.path.join(local_dir, "components", "tokenizer")
-            model_path = os.path.join(local_dir, "components", "model")
-            
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-            self.classifier = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
+            print("Downloading and loading model from MLflow registry...")
+            components = mlflow.transformers.load_model(model_name, return_type="components")
+            self.tokenizer = components["tokenizer"]
+            self.classifier = components["model"].to(self.device)
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.classifier = AutoModelForSequenceClassification.from_pretrained(model_name).to(self.device)
