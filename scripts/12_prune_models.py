@@ -53,8 +53,12 @@ def main():
         if repo_owner and repo_name:
             import dagshub
             dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
+            # Explicitly set tracking URI to DagsHub
+            import mlflow
+            mlflow.set_tracking_uri(f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow")
             
         print("Loading from MLflow...")
+        import mlflow
         components = mlflow.transformers.load_model(args.classifier, return_type="components")
         clf_model = components["model"]
         clf_tokenizer = components["tokenizer"]
