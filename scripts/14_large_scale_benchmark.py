@@ -85,10 +85,18 @@ def run_benchmark(backend_name, audio_dir="data/large_audio_test"):
         
         # If we have manifest, calculate accuracy
         if manifest is not None:
-            merged = df.merge(manifest, on="file")
-            # Map predictions to 1 (Scam) and 0 (Legit)
-            merged['pred_label'] = merged['prediction'].apply(lambda x: 1 if "Scam" in x else 0)
-            accuracy = (merged['pred_label'] == merged['label']).mean()
+            # manifest['file'] contains the full path, extract just the basename
+            manifest['file_basename'] = manifest['file'].apply(os.path.basename)
+            merged = df.merge(manifest, left_on="file", right_on="file_basename")
+            
+            if len(merged) == 0:
+                print("Warning: Manifest merge failed, check file names.")
+                accuracy = float('nan')
+            else:
+                # Map predictions to 1 (Scam) and 0 (Legit)
+                merged['pred_label'] = merged['prediction'].apply(lambda x: 1 if "Scam" in x else 0)
+                accuracy = (merged['pred_label'] == merged['label']).mean()
+                
             mlflow.log_metric("accuracy", accuracy)
             print(f"Holdout Accuracy: {accuracy:.2%}")
             
