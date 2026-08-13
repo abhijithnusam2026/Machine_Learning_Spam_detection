@@ -95,6 +95,21 @@ def export_mlflow_data(output_dir="dagshub_export"):
                         "is_dir": artifact.is_dir,
                         "file_size": artifact.file_size
                     })
+                    
+                    # Physically download plot images or small files
+                    if not artifact.is_dir and (artifact.path.endswith('.png') or artifact.path.endswith('.jpg') or artifact.path.endswith('.txt') or artifact.path.endswith('.csv')):
+                        print(f"Downloading artifact: {artifact.path} for run {run_name}")
+                        try:
+                            # Save inside dagshub_export/artifacts/<run_id>/
+                            local_artifact_dir = os.path.join(output_dir, "artifacts", run_id)
+                            os.makedirs(local_artifact_dir, exist_ok=True)
+                            mlflow.artifacts.download_artifacts(
+                                artifact_uri=f"runs:/{run_id}/{artifact.path}",
+                                dst_path=local_artifact_dir
+                            )
+                        except Exception as e:
+                            print(f"Failed to download {artifact.path}: {e}")
+                            
             except Exception:
                 pass
                 
