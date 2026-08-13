@@ -31,7 +31,8 @@ def run_benchmark(backend_name, audio_dir="data/large_audio_test"):
     set_config(backend_name)
     
     # Reload inference_pipeline to ensure it picks up new config
-    import scripts.10_inference_pipeline as infer_module
+    import importlib
+    infer_module = importlib.import_module("scripts.10_inference_pipeline")
     importlib.reload(infer_module)
     
     print(f"Initializing {backend_name.upper()} Pipeline...")
