@@ -50,8 +50,10 @@ def main():
         load_dotenv()
         repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
         repo_name = os.getenv("DAGSHUB_REPO_NAME")
-        if repo_owner and repo_name:
+        token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+        if repo_owner and repo_name and token:
             import dagshub
+            dagshub.auth.add_app_token(token)
             dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
             # Explicitly set tracking URI to DagsHub
             import mlflow
