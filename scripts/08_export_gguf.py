@@ -239,5 +239,10 @@ if __name__ == "__main__":
     branch = detect_branch()
     stage = stage_for_branch(branch)
 
-    export_classifier_to_gguf(model_name=args.model_name, stage=stage)
-    export_whisper_to_ggml(model_name=args.whisper_name, stage=stage)
+    export_stage_clf = f"{stage}_pruned" if "pruned" in args.model_name else stage
+    export_dir_clf = "models/gguf_classifier_pruned" if "pruned" in args.model_name else "models/gguf_classifier"
+    export_classifier_to_gguf(model_name=args.model_name, output_dir=export_dir_clf, stage=export_stage_clf)
+    
+    export_stage_wh = f"{stage}_pruned" if "pruned" in args.whisper_name else stage
+    export_dir_wh = "models/ggml_whisper_pruned" if "pruned" in args.whisper_name else "models/ggml_whisper"
+    export_whisper_to_ggml(model_name=args.whisper_name, output_dir=export_dir_wh, stage=export_stage_wh)
