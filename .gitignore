@@ -62,4 +62,5 @@ tensorboard/
 
 # Docker/Kubernetes local state
 .docker/
-kubeconfig*
+kubeconfig*pruned_classifier/
+pruned_whisper/
