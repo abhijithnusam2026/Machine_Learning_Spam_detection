@@ -36,6 +36,8 @@ runs/
 wandb/
 mlruns/
 lightning_logs/
+pruned_classifier/
+pruned_whisper/
 
 # Model files
 *.bin
