@@ -157,9 +157,13 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
         run_cmd(["cmake", "-B", "build"], cwd="whisper.cpp")
         run_cmd(["cmake", "--build", "build", "--config", "Release", "-j", "--target", "whisper-quantize"], cwd="whisper.cpp")
 
-    from huggingface_hub import snapshot_download
-    print(f"Downloading {model_name} weights locally...")
-    local_model_dir = snapshot_download(repo_id=model_name)
+    if os.path.exists(model_name):
+        print(f"Using local model directory for Whisper: {model_name}")
+        local_model_dir = model_name
+    else:
+        from huggingface_hub import snapshot_download
+        print(f"Downloading {model_name} weights locally...")
+        local_model_dir = snapshot_download(repo_id=model_name)
     
     # Convert to F16 GGML
     # whisper.cpp uses models/convert-h5-to-ggml.py or convert-pt-to-ggml.py
