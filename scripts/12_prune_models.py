@@ -52,12 +52,16 @@ def main():
         repo_name = os.getenv("DAGSHUB_REPO_NAME")
         token = os.getenv("MLFLOW_TRACKING_PASSWORD")
         if repo_owner and repo_name and token:
+            os.environ["MLFLOW_TRACKING_USERNAME"] = repo_owner
+            os.environ["MLFLOW_TRACKING_PASSWORD"] = token
+            os.environ["MLFLOW_TRACKING_URI"] = f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow"
+            
             import dagshub
             dagshub.auth.add_app_token(token)
             dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
-            # Explicitly set tracking URI to DagsHub
+            
             import mlflow
-            mlflow.set_tracking_uri(f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow")
+            mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
             
         print("Loading from MLflow...")
         import mlflow
