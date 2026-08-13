@@ -31,7 +31,8 @@ class InferencePipeline:
         print(f"Loading FP16 ASR: {self.config['fp16_asr_model_name']}")
         self.asr_pipe = pipeline("automatic-speech-recognition", 
                                model=self.config["fp16_asr_model_name"], 
-                               device=self.device)
+                               device=self.device,
+                               chunk_length_s=30)
         
         # Load Classifier
         model_name = self.config['fp16_classifier_model_name']
