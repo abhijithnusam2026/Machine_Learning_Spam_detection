@@ -51,26 +51,32 @@ def run_benchmark(backend_name, audio_dir="data/large_audio_test"):
         mlflow.set_tag("dataset", "holdout_tts_large")
         mlflow.set_tag("is_pruned", "true" if "pruned" in backend_name else "false")
         
-        for idx, file in enumerate(files):
-            full_path = os.path.join(audio_dir, file)
-            print(f"[{idx+1}/{len(files)}] Processing {file}...")
+        batch_size = 10
+        full_paths = [os.path.join(audio_dir, f) for f in files]
+        
+        for i in range(0, len(full_paths), batch_size):
+            batch_files = files[i:i+batch_size]
+            batch_paths = full_paths[i:i+batch_size]
             
-            res = pipeline.process_audio(full_path)
+            print(f"[{i+1}-{min(i+batch_size, len(files))}/{len(files)}] Processing batch...")
+            batch_results = pipeline.process_batch(batch_paths, batch_size=batch_size)
             
-            row = {
-                "file": file,
-                "transcript": res["transcript"],
-                "prediction": res["prediction"],
-                "asr_latency_s": res["metrics"]["asr_latency"],
-                "clf_latency_s": res["metrics"]["classifier_latency"],
-                "total_latency_s": res["metrics"]["total_latency"]
-            }
-            results.append(row)
-            
-            # Log metrics per step
-            mlflow.log_metric("asr_latency_s", row["asr_latency_s"], step=idx)
-            mlflow.log_metric("clf_latency_s", row["clf_latency_s"], step=idx)
-            mlflow.log_metric("total_latency_s", row["total_latency_s"], step=idx)
+            for idx, (file, res) in enumerate(zip(batch_files, batch_results)):
+                row = {
+                    "file": file,
+                    "transcript": res["transcript"],
+                    "prediction": res["prediction"],
+                    "asr_latency_s": res["metrics"]["asr_latency"],
+                    "clf_latency_s": res["metrics"]["classifier_latency"],
+                    "total_latency_s": res["metrics"]["total_latency"]
+                }
+                results.append(row)
+                
+                # Log metrics per step
+                global_idx = i + idx
+                mlflow.log_metric("asr_latency_s", row["asr_latency_s"], step=global_idx)
+                mlflow.log_metric("clf_latency_s", row["clf_latency_s"], step=global_idx)
+                mlflow.log_metric("total_latency_s", row["total_latency_s"], step=global_idx)
             
         df = pd.DataFrame(results)
         

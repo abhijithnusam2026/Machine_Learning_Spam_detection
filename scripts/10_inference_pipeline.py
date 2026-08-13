@@ -165,6 +165,59 @@ class InferencePipeline:
             embeds = self.llm.embed(text)
             return "Scam (GGUF Simulated)"
             
+    def process_batch(self, audio_files, batch_size=8):
+        metrics = {}
+        t0 = time.time()
+        
+        # --- 1. ASR Phase ---
+        transcripts = self._transcribe_batch(audio_files, batch_size=batch_size)
+        metrics['asr_latency'] = time.time() - t0
+        
+        # --- 2. Classifier Phase ---
+        t1 = time.time()
+        predictions = self._classify_batch(transcripts, batch_size=batch_size)
+        metrics['classifier_latency'] = time.time() - t1
+        
+        metrics['total_latency'] = metrics['asr_latency'] + metrics['classifier_latency']
+        
+        results = []
+        for t, p in zip(transcripts, predictions):
+            results.append({
+                "transcript": t,
+                "prediction": p,
+                "metrics": {
+                    "asr_latency": metrics['asr_latency'] / len(audio_files),
+                    "classifier_latency": metrics['classifier_latency'] / len(audio_files),
+                    "total_latency": metrics['total_latency'] / len(audio_files)
+                }
+            })
+        return results
+
+    def _transcribe_batch(self, audio_files, batch_size=8):
+        if self.backend == "fp16":
+            results = self.asr_pipe(audio_files, batch_size=batch_size)
+            return [res["text"].strip() for res in results]
+        else:
+            # GGUF/whisper.cpp doesn't support native batching across multiple files easily, 
+            # so we process sequentially which natively multi-threads per file anyway
+            return [self._transcribe(f) for f in audio_files]
+
+    def _classify_batch(self, texts, batch_size=8):
+        if self.backend == "fp16":
+            import torch
+            predictions = []
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i+batch_size]
+                inputs = self.tokenizer(batch_texts, return_tensors="pt", padding=True, truncation=True, max_length=512).to(self.device)
+                with torch.no_grad():
+                    outputs = self.classifier(**inputs)
+                    probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+                    pred_idxs = torch.argmax(probs, dim=1).tolist()
+                    predictions.extend(["Scam" if idx == 1 else "Legitimate" for idx in pred_idxs])
+            return predictions
+        else:
+            return [self._classify(t) for t in texts]
+            
 if __name__ == "__main__":
     pipeline = InferencePipeline()
     print("Pipeline ready.")
