@@ -43,10 +43,15 @@ class InferencePipeline:
             from mlflow.artifacts import download_artifacts
             print("Downloading model from MLflow registry...")
             local_dir = download_artifacts(artifact_uri=model_name)
-            model_name = local_dir
-
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.classifier = AutoModelForSequenceClassification.from_pretrained(model_name).to(self.device)
+            
+            tokenizer_path = os.path.join(local_dir, "components", "tokenizer")
+            model_path = os.path.join(local_dir, "components", "model")
+            
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+            self.classifier = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.classifier = AutoModelForSequenceClassification.from_pretrained(model_name).to(self.device)
 
     def _init_gguf(self):
         from llama_cpp import Llama
