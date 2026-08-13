@@ -78,7 +78,13 @@ class InferencePipeline:
         load_dotenv()
         owner = os.getenv("DAGSHUB_REPO_OWNER", "kureeltanishq")
         name = os.getenv("DAGSHUB_REPO_NAME", "2026SU_MS_DSP_422-DL_SEC61_Machine_Learning_Spam_detection")
-        s3 = boto3.client('s3', endpoint_url="https://dagshub.com/api/v1/repo-buckets/s3")
+        token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+        
+        import dagshub
+        if token:
+            dagshub.auth.add_app_token(token)
+            
+        s3 = dagshub.get_repo_bucket_client(f"{owner}/{name}")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         s3.download_file(name, file_path, file_path)
 
