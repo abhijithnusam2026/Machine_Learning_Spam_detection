@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Scam Detection</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+        }
+        .container {
+            background-color: #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+        h1 { margin-bottom: 20px; }
+        .upload-area {
+            border: 2px dashed #3b82f6;
+            padding: 40px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: 0.3s;
+        }
+        .upload-area:hover { background-color: #3b82f620; }
+        .status {
+            font-weight: bold;
+            color: #3b82f6;
+            margin-top: 15px;
+            min-height: 24px;
+        }
+        .transcript-box {
+            background-color: #0f172a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: left;
+            min-height: 80px;
+            font-style: italic;
+            color: #cbd5e1;
+            display: none;
+        }
+        .result-box {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            display: none;
+        }
+        .scam { background-color: #ef4444; color: white; }
+        .legitimate { background-color: #22c55e; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Voice Scam Detector</h1>
+        <div class="upload-area" id="dropzone" onclick="document.getElementById('audio-upload').click()">
+            <p>Click to Upload Audio (.wav)</p>
+            <input type="file" id="audio-upload" accept=".wav" style="display: none;">
+        </div>
+        
+        <div class="status" id="status-text"></div>
+        <div class="transcript-box" id="transcript">Waiting for audio...</div>
+        <div class="result-box" id="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('audio-upload').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const status = document.getElementById('status-text');
+            const transcriptBox = document.getElementById('transcript');
+            const resultBox = document.getElementById('result');
+
+            // Reset UI
+            status.innerText = "Uploading audio...";
+            transcriptBox.style.display = "block";
+            transcriptBox.innerText = "Listening...";
+            resultBox.style.display = "none";
+
+            // Upload via fetch but read stream
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/detect_stream', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, {stream: true});
+                    
+                    const lines = buffer.split('\n\n');
+                    buffer = lines.pop(); // Keep incomplete chunk
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            const eventType = line.split('\n')[0].replace('event: ', '');
+                            const dataRaw = line.split('\n')[1].replace('data: ', '');
+                            const data = JSON.parse(dataRaw);
+                            
+                            if (eventType === 'status') {
+                                status.innerText = data.message;
+                            } 
+                            else if (eventType === 'transcript') {
+                                transcriptBox.innerText = `"` + data.text + `"`;
+                            } 
+                            else if (eventType === 'result') {
+                                status.innerText = "Analysis Complete!";
+                                resultBox.style.display = "block";
+                                resultBox.innerText = `Prediction: ${data.prediction} (in ${data.total_latency.toFixed(2)}s)`;
+                                
+                                if (data.prediction.toLowerCase().includes("scam")) {
+                                    resultBox.className = "result-box scam";
+                                } else {
+                                    resultBox.className = "result-box legitimate";
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                status.innerText = "Error analyzing audio: " + err.message;
+                status.style.color = "red";
+            }
+        });
+    </script>
+</body>
+</html>
