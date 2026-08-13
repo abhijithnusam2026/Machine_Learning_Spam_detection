@@ -61,10 +61,9 @@ def run_benchmark(backend_name, audio_dir="data/large_audio_test"):
                 "file": file,
                 "transcript": res["transcript"],
                 "prediction": res["prediction"],
-                "confidence": res["confidence"],
-                "asr_latency_s": res["latency_breakdown"]["asr_seconds"],
-                "clf_latency_s": res["latency_breakdown"]["classifier_seconds"],
-                "total_latency_s": res["latency_breakdown"]["total_seconds"]
+                "asr_latency_s": res["metrics"]["asr_latency"],
+                "clf_latency_s": res["metrics"]["classifier_latency"],
+                "total_latency_s": res["metrics"]["total_latency"]
             }
             results.append(row)
             
