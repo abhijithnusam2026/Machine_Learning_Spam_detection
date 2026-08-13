@@ -120,8 +120,26 @@ class InferencePipeline:
                 "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", temp_wav
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
+            # Find the binary
+            possible_paths = [
+                "./whisper.cpp/build/bin/whisper-cli",
+                "./whisper.cpp/build/bin/main",
+                "./whisper.cpp/bin/whisper-cli",
+                "./whisper.cpp/bin/main",
+                "./whisper.cpp/whisper-cli",
+                "./whisper.cpp/main"
+            ]
+            whisper_bin = None
+            for p in possible_paths:
+                if os.path.exists(p):
+                    whisper_bin = p
+                    break
+            
+            if not whisper_bin:
+                raise FileNotFoundError("Could not locate compiled whisper-cli or main binary in whisper.cpp directory")
+                
             result = subprocess.run([
-                "./whisper.cpp/main", "-m", self.whisper_model_path, "-f", temp_wav, "-nt"
+                whisper_bin, "-m", self.whisper_model_path, "-f", temp_wav, "-nt"
             ], capture_output=True, text=True)
             
             return result.stdout.strip()
