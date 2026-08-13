@@ -31,9 +31,26 @@ async def main():
     
     test_csv = "data/phase1.5/test.csv"
     if not os.path.exists(test_csv):
-        print(f"Error: {test_csv} not found.")
-        return
+        print(f"File {test_csv} not found locally. Downloading from DagsHub S3...")
+        from dotenv import load_dotenv
+        load_dotenv()
+        repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+        repo_name = os.getenv("DAGSHUB_REPO_NAME")
+        token = os.getenv("MLFLOW_TRACKING_PASSWORD")
         
+        if repo_owner and repo_name and token:
+            import dagshub
+            dagshub.auth.add_app_token(token)
+            s3 = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
+            os.makedirs(os.path.dirname(test_csv), exist_ok=True)
+            # Fetch from the phase1.5 storage location
+            remote_path = "data/model-modernbert-universal/phase1.5/test.csv"
+            s3.download_file(repo_name, remote_path, test_csv)
+            print("Download complete.")
+        else:
+            print("Missing DagsHub credentials to download the test dataset.")
+            return
+            
     df = pd.read_csv(test_csv)
     
     # Filter for long enough texts
