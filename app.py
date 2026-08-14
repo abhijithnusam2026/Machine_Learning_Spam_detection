@@ -15,7 +15,9 @@ if os.path.exists(config_path):
 
 # Load pipeline (will auto-download models from DagsHub if DagsHub secrets are set in HF Spaces)
 print("Initializing CPU (GGUF) Inference Pipeline...")
-from scripts.10_inference_pipeline import InferencePipeline
+import importlib
+infer_module = importlib.import_module("scripts.10_inference_pipeline")
+InferencePipeline = infer_module.InferencePipeline
 pipeline = InferencePipeline()
 
 def process_audio(audio_file_path):
