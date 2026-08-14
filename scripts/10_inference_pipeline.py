@@ -149,10 +149,21 @@ class InferencePipeline:
             if not whisper_bin:
                 raise FileNotFoundError("Could not locate compiled whisper-cli or main binary in whisper.cpp directory")
                 
+            # Run whisper and force it to output a .txt file
             result = subprocess.run([
-                whisper_bin, "-m", self.whisper_model_path, "-f", temp_wav, "-nt"
+                whisper_bin, "-m", self.whisper_model_path, "-f", temp_wav, "-otxt"
             ], capture_output=True, text=True)
             
+            # whisper.cpp appends .txt to the input filename
+            out_txt = temp_wav + ".txt"
+            if os.path.exists(out_txt):
+                with open(out_txt, "r", encoding="utf-8") as f:
+                    transcript = f.read().strip()
+                os.remove(out_txt)
+                return transcript
+            
+            # Fallback if file wasn't created
+            print("Whisper STDERR:", result.stderr)
             return result.stdout.strip()
 
     def _classify(self, text):
