@@ -254,11 +254,11 @@
             if (name !== 'live' && isLive) stopLive();
         }
 
-        // ---- Live call monitor (3-second sliding window) ----
+        // ---- Live call monitor (3-second sliding window over WebSocket) ----
         const LIVE_WINDOW_MS = 3000;
         let mediaStream = null;
         let mediaRecorder = null;
-        let sessionId = null;
+        let liveSocket = null;
         let isLive = false;
 
         function renderLiveAlert(prediction) {
@@ -277,28 +277,52 @@
             }
         }
 
-        async function sendLiveChunk(blob) {
-            const formData = new FormData();
-            formData.append('file', blob, 'chunk.webm');
-            formData.append('session_id', sessionId);
+        function openLiveSocket() {
+            return new Promise((resolve, reject) => {
+                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const socket = new WebSocket(`${proto}//${location.host}/ws/live`);
+                socket.binaryType = 'arraybuffer';
 
-            const liveStatus = document.getElementById('live-status');
-            const liveTranscript = document.getElementById('live-transcript');
-            try {
-                const res = await fetch('/live_chunk', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (data.error) {
-                    liveStatus.innerText = 'Error: ' + data.error;
-                    return;
-                }
-                liveTranscript.innerText = data.transcript || '(listening...)';
-                renderLiveAlert(data.prediction);
-                liveStatus.innerText = `ASR: ${data.asr_latency.toFixed(2)}s | Classifier: ${data.clf_latency.toFixed(2)}s`;
-            } catch (err) {
+                socket.onopen = () => resolve(socket);
+                socket.onerror = (err) => reject(err);
+
+                socket.onmessage = (event) => {
+                    const liveStatus = document.getElementById('live-status');
+                    const liveTranscript = document.getElementById('live-transcript');
+                    let data;
+                    try {
+                        data = JSON.parse(event.data);
+                    } catch (e) {
+                        console.error('Bad message from live socket:', e);
+                        return;
+                    }
+                    if (data.type === 'error') {
+                        liveStatus.innerText = 'Error: ' + data.error;
+                        return;
+                    }
+                    if (data.type !== 'result') return;
+                    liveTranscript.innerText = data.transcript || '(listening...)';
+                    renderLiveAlert(data.prediction);
+                    liveStatus.innerText = `ASR: ${data.asr_latency.toFixed(2)}s | Classifier: ${data.clf_latency.toFixed(2)}s`;
+                };
+
+                socket.onclose = () => {
+                    if (isLive) {
+                        document.getElementById('live-status').innerText = 'Connection lost.';
+                        stopLive();
+                    }
+                };
+            });
+        }
+
+        function sendLiveChunk(blob) {
+            if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
                 // A dropped window is recoverable (next 3s chunk is on the way) -- log it
                 // instead of overwriting the live status with a scary one-off network error.
-                console.warn('Dropped a live audio chunk:', err.message);
+                console.warn('Live socket not open, dropping this window.');
+                return;
             }
+            blob.arrayBuffer().then((buf) => liveSocket.send(buf));
         }
 
         function recordCycle() {
@@ -331,7 +355,17 @@
                 document.getElementById('live-status').innerText = 'Microphone access denied: ' + err.message;
                 return;
             }
-            sessionId = crypto.randomUUID();
+
+            document.getElementById('live-status').innerText = 'Connecting...';
+            try {
+                liveSocket = await openLiveSocket();
+            } catch (err) {
+                document.getElementById('live-status').innerText = 'Could not connect to live monitor.';
+                mediaStream.getTracks().forEach((t) => t.stop());
+                mediaStream = null;
+                return;
+            }
+
             isLive = true;
             btn.innerText = 'Stop Listening';
             btn.className = 'mic-btn stop';
@@ -352,10 +386,12 @@
                 mediaStream.getTracks().forEach((t) => t.stop());
                 mediaStream = null;
             }
-            if (sessionId) {
-                const formData = new FormData();
-                formData.append('session_id', sessionId);
-                fetch('/live_reset', { method: 'POST', body: formData });
+            if (liveSocket) {
+                if (liveSocket.readyState === WebSocket.OPEN) {
+                    liveSocket.send(JSON.stringify({ type: 'reset' }));
+                }
+                liveSocket.close();
+                liveSocket = null;
             }
         }
     </script>

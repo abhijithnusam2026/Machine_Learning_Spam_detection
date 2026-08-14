@@ -2,7 +2,7 @@ import os
 import json
 import time
 import asyncio
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
@@ -56,59 +56,81 @@ app.add_middleware(
 
 os.makedirs("data/uploads", exist_ok=True)
 
-# In-memory per-session running transcript for the live 3-second-window
-# monitor. Keyed by a client-generated session_id. Fine for a single
-# Railway instance; wipe on restart / doesn't survive multiple replicas.
 LIVE_WINDOW_SEC = 3.0
-live_sessions = {}
 
 def _write_file(path: str, contents: bytes):
     with open(path, "wb") as f:
         f.write(contents)
 
-@app.post("/live_chunk")
-async def live_chunk(file: UploadFile = File(...), session_id: str = Form(...)):
-    """Receives one ~3s audio window from the browser mic, transcribes just
-    that window, appends the text to the session's running transcript, then
-    re-classifies the full transcript so far."""
-    file_path = f"data/uploads/live_{session_id}_{int(time.time() * 1000)}_{file.filename}"
-    contents = await file.read()
-    await asyncio.to_thread(_write_file, file_path, contents)
+@app.websocket("/ws/live")
+async def live_ws(websocket: WebSocket):
+    """Live 3-second-window monitor over a persistent connection.
 
+    Repeated short-lived POSTs (one per audio window) were getting killed
+    by the platform's HTTP proxy timeout/idle limits under load. A single
+    long-lived WebSocket avoids paying that per-request connection cost --
+    the browser mic sends each ~3s window as a binary frame and gets a JSON
+    result frame back. The transcript lives in this connection's own scope,
+    so there's no session_id/dict bookkeeping to leak across restarts.
+    """
+    await websocket.accept()
+    transcript = ""
+    chunk_idx = 0
     try:
-        t0 = time.time()
-        chunk_text = (await asyncio.to_thread(pipeline._transcribe, file_path)).strip()
-        asr_latency = time.time() - t0
+        while True:
+            message = await websocket.receive()
+            if message.get("type") == "websocket.disconnect":
+                break
 
-        transcript = live_sessions.setdefault(session_id, "")
-        if chunk_text:
-            transcript = (transcript + " " + chunk_text).strip()
-            live_sessions[session_id] = transcript
+            raw_text = message.get("text")
+            if raw_text is not None:
+                try:
+                    payload = json.loads(raw_text)
+                except ValueError:
+                    payload = {}
+                if payload.get("type") == "reset":
+                    transcript = ""
+                    await websocket.send_json({"type": "reset_ack"})
+                continue
 
-        t1 = time.time()
-        if transcript:
-            prediction = await asyncio.to_thread(pipeline._classify, transcript)
-        else:
-            prediction = "Legitimate (No speech yet)"
-        clf_latency = time.time() - t1
+            data = message.get("bytes")
+            if not data:
+                continue
 
-        return {
-            "transcript": transcript,
-            "chunk_text": chunk_text,
-            "prediction": prediction,
-            "asr_latency": asr_latency,
-            "clf_latency": clf_latency,
-        }
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+            chunk_idx += 1
+            file_path = f"data/uploads/live_ws_{id(websocket)}_{chunk_idx}_{int(time.time() * 1000)}.webm"
+            await asyncio.to_thread(_write_file, file_path, data)
 
-@app.post("/live_reset")
-async def live_reset(session_id: str = Form(...)):
-    live_sessions.pop(session_id, None)
-    return {"status": "reset"}
+            try:
+                t0 = time.time()
+                chunk_text = (await asyncio.to_thread(pipeline._transcribe, file_path)).strip()
+                asr_latency = time.time() - t0
+
+                if chunk_text:
+                    transcript = (transcript + " " + chunk_text).strip()
+
+                t1 = time.time()
+                if transcript:
+                    prediction = await asyncio.to_thread(pipeline._classify, transcript)
+                else:
+                    prediction = "Legitimate (No speech yet)"
+                clf_latency = time.time() - t1
+
+                await websocket.send_json({
+                    "type": "result",
+                    "transcript": transcript,
+                    "chunk_text": chunk_text,
+                    "prediction": prediction,
+                    "asr_latency": asr_latency,
+                    "clf_latency": clf_latency,
+                })
+            except Exception as e:
+                await websocket.send_json({"type": "error", "error": str(e)})
+            finally:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+    except WebSocketDisconnect:
+        pass
 
 @app.post("/detect")
 async def detect_scam(file: UploadFile = File(...)):
