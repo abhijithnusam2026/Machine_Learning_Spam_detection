@@ -295,7 +295,9 @@
                 renderLiveAlert(data.prediction);
                 liveStatus.innerText = `ASR: ${data.asr_latency.toFixed(2)}s | Classifier: ${data.clf_latency.toFixed(2)}s`;
             } catch (err) {
-                liveStatus.innerText = 'Error sending audio: ' + err.message;
+                // A dropped window is recoverable (next 3s chunk is on the way) -- log it
+                // instead of overwriting the live status with a scary one-off network error.
+                console.warn('Dropped a live audio chunk:', err.message);
             }
         }
 

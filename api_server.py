@@ -61,14 +61,18 @@ os.makedirs("data/uploads", exist_ok=True)
 LIVE_WINDOW_SEC = 3.0
 live_sessions = {}
 
+def _write_file(path: str, contents: bytes):
+    with open(path, "wb") as f:
+        f.write(contents)
+
 @app.post("/live_chunk")
 async def live_chunk(file: UploadFile = File(...), session_id: str = Form(...)):
     """Receives one ~3s audio window from the browser mic, transcribes just
     that window, appends the text to the session's running transcript, then
     re-classifies the full transcript so far."""
     file_path = f"data/uploads/live_{session_id}_{int(time.time() * 1000)}_{file.filename}"
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
+    contents = await file.read()
+    await asyncio.to_thread(_write_file, file_path, contents)
 
     try:
         t0 = time.time()
@@ -180,4 +184,4 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 if __name__ == "__main__":
     import uvicorn
     print("Starting Scam Detection Server on http://0.0.0.0:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, port=8000)
