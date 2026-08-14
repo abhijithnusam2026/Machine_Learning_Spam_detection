@@ -77,11 +77,31 @@ class InferencePipeline:
             print(f"Downloading {self.whisper_model_path} from DagsHub...")
             self._download_from_dagshub(self.whisper_model_path)
             
-        # Ensure whisper.cpp is compiled
-        if not os.path.exists("./whisper.cpp/main"):
+        # Ensure whisper.cpp is compiled. Modern builds (CMake) put binaries
+        # under whisper.cpp/build/bin/, not whisper.cpp/main -- check all the
+        # locations _transcribe() knows how to find, so an already-compiled
+        # image (e.g. built during a Docker build step) isn't rebuilt on
+        # every cold start.
+        if self._find_whisper_binary() is None:
             print("whisper.cpp not compiled. Compiling now...")
-            subprocess.run(["git", "clone", "https://github.com/ggerganov/whisper.cpp.git"], check=False)
+            if not os.path.exists("./whisper.cpp"):
+                subprocess.run(["git", "clone", "https://github.com/ggerganov/whisper.cpp.git"], check=True)
             subprocess.run(["make"], cwd="./whisper.cpp", check=True)
+
+    WHISPER_BIN_PATHS = [
+        "./whisper.cpp/build/bin/whisper-cli",
+        "./whisper.cpp/build/bin/main",
+        "./whisper.cpp/bin/whisper-cli",
+        "./whisper.cpp/bin/main",
+        "./whisper.cpp/whisper-cli",
+        "./whisper.cpp/main",
+    ]
+
+    def _find_whisper_binary(self):
+        for p in self.WHISPER_BIN_PATHS:
+            if os.path.exists(p):
+                return p
+        return None
 
     def _download_from_dagshub(self, file_path):
         import boto3
@@ -164,21 +184,7 @@ class InferencePipeline:
             if ffmpeg_result.returncode != 0:
                 raise RuntimeError(f"ffmpeg audio conversion failed: {ffmpeg_result.stderr[-1000:]}")
             
-            # Find the binary
-            possible_paths = [
-                "./whisper.cpp/build/bin/whisper-cli",
-                "./whisper.cpp/build/bin/main",
-                "./whisper.cpp/bin/whisper-cli",
-                "./whisper.cpp/bin/main",
-                "./whisper.cpp/whisper-cli",
-                "./whisper.cpp/main"
-            ]
-            whisper_bin = None
-            for p in possible_paths:
-                if os.path.exists(p):
-                    whisper_bin = p
-                    break
-            
+            whisper_bin = self._find_whisper_binary()
             if not whisper_bin:
                 raise FileNotFoundError("Could not locate compiled whisper-cli or main binary in whisper.cpp directory")
 
