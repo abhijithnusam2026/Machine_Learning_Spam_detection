@@ -25,11 +25,18 @@ load_dotenv()
 owner = os.getenv("DAGSHUB_REPO_OWNER")
 name = os.getenv("DAGSHUB_REPO_NAME")
 token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+# DagsHub's MLflow proxy authenticates as whoever the token belongs to, which
+# isn't necessarily the repo owner (e.g. a collaborator's own personal access
+# token). Defaults to owner for backward compatibility, but set
+# DAGSHUB_USERNAME explicitly if your token was generated under a different
+# account -- otherwise every request 401s regardless of how many times the
+# token is regenerated.
+username = os.getenv("DAGSHUB_USERNAME", owner)
 
 if owner and name and token:
     import dagshub
     dagshub.auth.add_app_token(token)
-    os.environ["MLFLOW_TRACKING_USERNAME"] = owner
+    os.environ["MLFLOW_TRACKING_USERNAME"] = username
     os.environ["MLFLOW_TRACKING_PASSWORD"] = token
     mlflow.set_tracking_uri(f"https://dagshub.com/{owner}/{name}.mlflow")
 
