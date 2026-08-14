@@ -167,8 +167,18 @@ class InferencePipeline:
                 return "Scam" if pred_idx == 1 else "Legitimate"
         else:
             # GGUF ModernBERT classification using embeddings
-            # We extract the 768-dim embeddings and pass them through our custom trained Logistic Regression head
-            embeds = self.llm.embed(text[:4000]) # Truncate to avoid context window crashes
+            # We extract the embeddings and mean-pool them across the sequence dimension
+            raw_emb = self.llm.embed(text[:4000]) # Truncate to avoid context window crashes
+            arr = np.array(raw_emb)
+            
+            # Robust pooling depending on llama-cpp-python return shape
+            if arr.ndim == 3:
+                embeds = np.mean(arr[0], axis=0)  # (1, seq, hidden) -> (seq, hidden) -> (hidden,)
+            elif arr.ndim == 2:
+                embeds = np.mean(arr, axis=0)     # (seq, hidden) or (1, hidden) -> (hidden,)
+            else:
+                embeds = arr                      # (hidden,)
+                
             
             if hasattr(self, 'gguf_head') and self.gguf_head is not None:
                 # Scikit-learn expects 2D array: (n_samples, n_features)
