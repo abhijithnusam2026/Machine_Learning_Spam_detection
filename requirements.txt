@@ -1,4 +1,3 @@
-gradio
 fastapi
 uvicorn
 python-multipart
