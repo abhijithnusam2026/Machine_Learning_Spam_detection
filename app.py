@@ -20,6 +20,9 @@ infer_module = importlib.import_module("scripts.10_inference_pipeline")
 InferencePipeline = infer_module.InferencePipeline
 pipeline = InferencePipeline()
 
+import spaces
+
+@spaces.GPU
 def process_audio(audio_file_path):
     if not audio_file_path:
         return "No audio provided.", "N/A", "N/A"
