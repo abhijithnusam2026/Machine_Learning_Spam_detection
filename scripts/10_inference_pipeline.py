@@ -59,7 +59,7 @@ class InferencePipeline:
             self._download_from_dagshub(model_path)
             
         print(f"Loading GGUF Classifier: {model_path}")
-        self.llm = Llama(model_path=model_path, verbose=False, embedding=True, n_ctx=8192)
+        self.llm = Llama(model_path=model_path, verbose=False, embedding=True, n_ctx=1024)
         
         # Load the custom trained Scikit-Learn classification head
         import joblib
@@ -211,8 +211,15 @@ class InferencePipeline:
                 return "Legitimate (Empty Audio)"
                 
             # We extract the embeddings and mean-pool them across the sequence dimension
-            raw_emb = self.llm.embed(text[:30000]) # Truncate to safe char limit well within 8192 tokens
+            # We truncate to 5000 characters to support up to ~5 minutes of audio 
+            # while maintaining fast CPU inference speeds.
+            import time
+            t_emb_start = time.time()
+            raw_emb = self.llm.embed(text[:5000])
+            emb_latency = time.time() - t_emb_start
+            
             arr = np.array(raw_emb)
+            print(f"[CLASSIFIER] Truncated text to {len(text[:5000])} chars. Embedding shape: {arr.shape} | Extraction latency: {emb_latency:.2f}s", flush=True)
             
             # Robust pooling depending on llama-cpp-python return shape
             if arr.ndim == 3:
