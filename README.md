@@ -1,3 +1,14 @@
+---
+title: Scam Detection AI
+emoji: 🛡️
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: "4.36.1"
+app_file: app.py
+pinned: false
+---
+
 # Scam Alert System (DistilBERT Fine-Tuning)
 
 An end-to-end Machine Learning pipeline for automated scam transcript detection. This project utilizes lightweight NLP models (DistilBERT) for rapid, domain-specific inference.
