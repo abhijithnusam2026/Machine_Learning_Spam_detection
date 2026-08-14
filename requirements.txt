@@ -12,6 +12,7 @@ dagshub
 python-dotenv
 librosa
 soundfile
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 llama-cpp-python
 scikit-learn
 joblib
