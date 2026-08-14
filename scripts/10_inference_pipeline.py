@@ -4,6 +4,7 @@ import time
 import subprocess
 import wave
 import contextlib
+import tempfile
 import numpy as np
 
 class InferencePipeline:
@@ -125,11 +126,13 @@ class InferencePipeline:
             return result["text"].strip()
         else:
             # GGUF uses whisper.cpp binary. It requires 16kHz wav.
-            temp_wav = "/tmp/temp_16k.wav"
-            subprocess.run([
+            temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+            ffmpeg_result = subprocess.run([
                 "ffmpeg", "-y", "-i", audio_file, 
                 "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", temp_wav
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ], capture_output=True, text=True)
+            if ffmpeg_result.returncode != 0:
+                raise RuntimeError(f"ffmpeg audio conversion failed: {ffmpeg_result.stderr[-1000:]}")
             
             # Find the binary
             possible_paths = [
@@ -148,19 +151,48 @@ class InferencePipeline:
             
             if not whisper_bin:
                 raise FileNotFoundError("Could not locate compiled whisper-cli or main binary in whisper.cpp directory")
-                
-            out_txt = "/tmp/transcript.txt"
-            with open(out_txt, "w") as f:
-                subprocess.run([
-                    whisper_bin, "-m", self.whisper_model_path, "-f", temp_wav, "-nt"
-                ], stdout=f, stderr=subprocess.DEVNULL)
-                
+
+            out_base = tempfile.NamedTemporaryFile(prefix="whisper_transcript_", delete=True).name
+            out_txt = f"{out_base}.txt"
+            cmd = [
+                whisper_bin,
+                "-m", self.whisper_model_path,
+                "-f", temp_wav,
+                "-nt",
+                "-otxt",
+                "-of", out_base,
+            ]
+            print(f"[ASR] Running whisper.cpp: {' '.join(cmd)}", flush=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            transcript = ""
             if os.path.exists(out_txt):
                 with open(out_txt, "r", encoding="utf-8") as f:
                     transcript = f.read().strip()
                 os.remove(out_txt)
-                return transcript
-            return ""
+
+            if not transcript:
+                transcript = result.stdout.strip()
+
+            try:
+                os.remove(temp_wav)
+            except OSError:
+                pass
+
+            if result.returncode != 0:
+                raise RuntimeError(f"whisper.cpp failed: {result.stderr[-1500:]}")
+
+            if not transcript:
+                error_msg = (
+                    f"Whisper ASR returned an empty transcript.\n"
+                    f"Exit code: {result.returncode}\n"
+                    f"STDOUT: {result.stdout[-1000:]!r}\n"
+                    f"STDERR: {result.stderr[-1500:]!r}"
+                )
+                print(f"[ASR ERROR] {error_msg}", flush=True)
+                raise RuntimeError(error_msg)
+
+            return transcript
 
     def _classify(self, text):
         if self.backend == "fp16":
