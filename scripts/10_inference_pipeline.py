@@ -50,16 +50,16 @@ class InferencePipeline:
             self.classifier = AutoModelForSequenceClassification.from_pretrained(model_name).to(self.device)
 
     def _init_gguf(self):
-        from llama_cpp import Llama
-        
+        from llama_cpp import Llama, LLAMA_POOLING_TYPE_MEAN
+
         # Load Classifier (GGUF)
         model_path = self.config['classifier_model_path']
         if not os.path.exists(model_path):
             print(f"Downloading {model_path} from DagsHub...")
             self._download_from_dagshub(model_path)
-            
+
         print(f"Loading GGUF Classifier: {model_path}")
-        self.llm = Llama(model_path=model_path, verbose=False, embedding=True, n_ctx=8192)
+        self.llm = Llama(model_path=model_path, verbose=False, embedding=True, pooling_type=LLAMA_POOLING_TYPE_MEAN)
         
         # Load the custom trained Scikit-Learn classification head
         import joblib
@@ -119,6 +119,36 @@ class InferencePipeline:
             "prediction": prediction,
             "metrics": metrics
         }
+
+    def transcribe_chunk(self, sr, audio_array):
+        """Transcribe a raw in-memory audio chunk (e.g. a 3s live-mic window).
+
+        audio_array: 1-D numpy array (int16 or float) at sample rate `sr`.
+        Writes it to a temp wav and reuses the normal file-based ASR path.
+        """
+        import soundfile as sf
+
+        audio_array = np.asarray(audio_array)
+        if audio_array.dtype.kind == "f":
+            # float samples are expected in [-1, 1]
+            audio_array = np.clip(audio_array, -1.0, 1.0)
+        elif audio_array.dtype != np.int16:
+            audio_array = audio_array.astype(np.int16)
+
+        temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        try:
+            sf.write(temp_wav, audio_array, sr, subtype="PCM_16")
+            return self._transcribe(temp_wav)
+        finally:
+            try:
+                os.remove(temp_wav)
+            except OSError:
+                pass
+
+    def classify(self, text):
+        """Public wrapper so callers (e.g. the live-monitor UI) can classify
+        arbitrary/cumulative text without duplicating the backend branching."""
+        return self._classify(text)
 
     def _transcribe(self, audio_file):
         if self.backend == "fp16":
@@ -209,11 +239,11 @@ class InferencePipeline:
             text = text.strip()
             if not text:
                 return "Legitimate (Empty Audio)"
-                
+
             # We extract the embeddings and mean-pool them across the sequence dimension
             raw_emb = self.llm.embed(text[:30000]) # Truncate to safe char limit well within 8192 tokens
             arr = np.array(raw_emb)
-            
+
             # Robust pooling depending on llama-cpp-python return shape
             if arr.ndim == 3:
                 embeds = np.mean(arr[0], axis=0)  # (1, seq, hidden) -> (seq, hidden) -> (hidden,)
@@ -221,7 +251,7 @@ class InferencePipeline:
                 embeds = np.mean(arr, axis=0)     # (seq, hidden) or (1, hidden) -> (hidden,)
             else:
                 embeds = arr                      # (hidden,)
-                
+
             
             if hasattr(self, 'gguf_head') and self.gguf_head is not None:
                 # Scikit-learn expects 2D array: (n_samples, n_features)

@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from llama_cpp import Llama
+from llama_cpp import Llama, LLAMA_POOLING_TYPE_MEAN
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, accuracy_score
 import joblib
@@ -28,7 +28,7 @@ def main():
         s3.download_file(name, model_path, model_path)
 
     print(f"Loading GGUF model for embeddings: {model_path}")
-    llm = Llama(model_path=model_path, verbose=False, embedding=True)
+    llm = Llama(model_path=model_path, verbose=False, embedding=True, pooling_type=LLAMA_POOLING_TYPE_MEAN)
 
     # 2. Load Phase 1.5 Training Data
     train_path = "data/phase1.5/train.csv"
