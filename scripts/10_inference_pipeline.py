@@ -60,6 +60,16 @@ class InferencePipeline:
         print(f"Loading GGUF Classifier: {model_path}")
         self.llm = Llama(model_path=model_path, verbose=False, embedding=True)
         
+        # Load the custom trained Scikit-Learn classification head
+        import joblib
+        head_path = "models/gguf/gguf_classifier_head.joblib"
+        if os.path.exists(head_path):
+            print(f"Loading GGUF Classification Head: {head_path}")
+            self.gguf_head = joblib.load(head_path)
+        else:
+            print("WARNING: GGUF Classification Head not found. Will output simulated predictions.")
+            self.gguf_head = None
+        
         # For ASR (GGML), we will use whisper.cpp binary via subprocess
         self.whisper_model_path = self.config['asr_model_path']
         if not os.path.exists(self.whisper_model_path):
@@ -157,14 +167,15 @@ class InferencePipeline:
                 return "Scam" if pred_idx == 1 else "Legitimate"
         else:
             # GGUF ModernBERT classification using embeddings
-            # We get the sentence embedding and apply a dot product if we had the head
-            # But wait, llama.cpp dropped the classification head during export.
-            # For demonstration, we will just simulate prediction since GGUF classification 
-            # requires writing a custom C++ inference wrapper for sequence classification
-            # or extracting embeddings and passing to a scikit-learn logistic regression head.
-            # To keep it unified:
-            embeds = self.llm.embed(text)
-            return "Scam (GGUF Simulated)"
+            # We extract the 768-dim embeddings and pass them through our custom trained Logistic Regression head
+            embeds = self.llm.embed(text[:4000]) # Truncate to avoid context window crashes
+            
+            if hasattr(self, 'gguf_head') and self.gguf_head is not None:
+                # Scikit-learn expects 2D array: (n_samples, n_features)
+                pred_idx = self.gguf_head.predict([embeds])[0]
+                return "Scam" if pred_idx == 1 else "Legitimate"
+            else:
+                return "Scam (GGUF Simulated)"
             
     def process_batch(self, audio_files, batch_size=8):
         metrics = {}
