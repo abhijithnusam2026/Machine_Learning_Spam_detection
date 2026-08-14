@@ -49,6 +49,7 @@ app = FastAPI(title="Scam Detection API", description="Live Voice Scam Detection
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
