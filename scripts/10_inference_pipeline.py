@@ -58,7 +58,7 @@ class InferencePipeline:
             self._download_from_dagshub(model_path)
             
         print(f"Loading GGUF Classifier: {model_path}")
-        self.llm = Llama(model_path=model_path, verbose=False, embedding=True)
+        self.llm = Llama(model_path=model_path, verbose=False, embedding=True, n_ctx=8192)
         
         # Load the custom trained Scikit-Learn classification head
         import joblib
@@ -167,8 +167,12 @@ class InferencePipeline:
                 return "Scam" if pred_idx == 1 else "Legitimate"
         else:
             # GGUF ModernBERT classification using embeddings
+            text = text.strip()
+            if not text:
+                return "Legitimate (Empty Audio)"
+                
             # We extract the embeddings and mean-pool them across the sequence dimension
-            raw_emb = self.llm.embed(text[:4000]) # Truncate to avoid context window crashes
+            raw_emb = self.llm.embed(text[:30000]) # Truncate to safe char limit well within 8192 tokens
             arr = np.array(raw_emb)
             
             # Robust pooling depending on llama-cpp-python return shape
