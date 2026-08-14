@@ -1,37 +1,47 @@
-# Railway deployment image for the Gradio app (app.py), including the
-# live 3-second-window scam monitor. Separate from the root Dockerfile,
-# which runs api_server.py (FastAPI) for a different deployment target.
+# Railway deployment image for the FastAPI server (api_server.py) + the
+# static/ frontend, running the fp16/PyTorch backend (method 5b): ASR via
+# the HF `transformers` pipeline (downloads openai/whisper-tiny.en on boot)
+# and the ModernBERT classifier pulled from the MLflow registry on boot.
+# No whisper.cpp/GGUF build needed here (that's what the root Dockerfile /
+# Dockerfile.railway's GGUF variant is for) -- keeps the image simpler and
+# the cold start faster.
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# ffmpeg: audio resampling. git/cmake/make/g++: build whisper.cpp from source.
+# ffmpeg: decodes both arbitrary uploaded audio files and the webm/opus
+# chunks the live monitor records from the browser mic.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    git \
-    cmake \
-    make \
-    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps before copying the rest of the source so code-only
 # changes don't invalidate this (slow) layer.
+#
+# `llama_cpp_python` is dropped: it's only used by InferencePipeline's
+# GGUF backend (a local `from llama_cpp import ...` inside _init_gguf(),
+# never called since api_server.py forces backend="fp16"). PyPI has no
+# prebuilt wheel for it here, so uv falls back to compiling it from
+# source via CMake, which needs gcc/g++ -- deliberately not installed in
+# this image since the fp16 path never needs a compiler at all.
 COPY requirements.txt .
 RUN pip install --no-cache-dir uv \
     && uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu \
-    && uv pip install --system -r requirements.txt
+    && grep -v -E '^llama_cpp_python==' requirements.txt > requirements.railway.txt \
+    && uv pip install --system -r requirements.railway.txt
+
+# Pre-download the ASR model at build time. Fetching it at container
+# startup instead hits Hugging Face's Xet-backed CDN (us.aws.cdn.hf.co),
+# which has been unreliable from some runtime networks (read timeouts,
+# "SignatureError: invalid key pair id" on retry) -- baking it into the
+# image means every cold start reads it straight from local disk instead.
+# Keep this model name in sync with fp16_asr_model_name in
+# configs/inference_config.json.
+RUN python -c "from transformers import pipeline; pipeline('automatic-speech-recognition', model='openai/whisper-tiny.en')"
 
 COPY . /app/
 
-# Build whisper.cpp at image build time so the container never has to
-# compile it on first request (InferencePipeline falls back to compiling
-# at runtime if the binary is missing, but that's slow and needs git+cmake
-# present in the final image, which we'd rather avoid keeping around).
-RUN rm -rf whisper.cpp \
-    && git clone https://github.com/ggerganov/whisper.cpp.git \
-    && cd whisper.cpp && make
-
-# Railway injects PORT at runtime; app.py reads it via os.environ.
+# Railway injects PORT at runtime.
 EXPOSE 7860
 
-CMD ["python", "app.py"]
+CMD uvicorn api_server:app --host 0.0.0.0 --port ${PORT:-7860}

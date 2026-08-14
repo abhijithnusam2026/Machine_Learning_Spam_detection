@@ -2,7 +2,7 @@ import os
 import json
 import time
 import asyncio
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
@@ -47,6 +47,56 @@ app.add_middleware(
 )
 
 os.makedirs("data/uploads", exist_ok=True)
+
+# In-memory per-session running transcript for the live 3-second-window
+# monitor. Keyed by a client-generated session_id. Fine for a single
+# Railway instance; wipe on restart / doesn't survive multiple replicas.
+LIVE_WINDOW_SEC = 3.0
+live_sessions = {}
+
+@app.post("/live_chunk")
+async def live_chunk(file: UploadFile = File(...), session_id: str = Form(...)):
+    """Receives one ~3s audio window from the browser mic, transcribes just
+    that window, appends the text to the session's running transcript, then
+    re-classifies the full transcript so far."""
+    file_path = f"data/uploads/live_{session_id}_{int(time.time() * 1000)}_{file.filename}"
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+
+    try:
+        t0 = time.time()
+        chunk_text = (await asyncio.to_thread(pipeline._transcribe, file_path)).strip()
+        asr_latency = time.time() - t0
+
+        transcript = live_sessions.setdefault(session_id, "")
+        if chunk_text:
+            transcript = (transcript + " " + chunk_text).strip()
+            live_sessions[session_id] = transcript
+
+        t1 = time.time()
+        if transcript:
+            prediction = await asyncio.to_thread(pipeline._classify, transcript)
+        else:
+            prediction = "Legitimate (No speech yet)"
+        clf_latency = time.time() - t1
+
+        return {
+            "transcript": transcript,
+            "chunk_text": chunk_text,
+            "prediction": prediction,
+            "asr_latency": asr_latency,
+            "clf_latency": clf_latency,
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+@app.post("/live_reset")
+async def live_reset(session_id: str = Form(...)):
+    live_sessions.pop(session_id, None)
+    return {"status": "reset"}
 
 @app.post("/detect")
 async def detect_scam(file: UploadFile = File(...)):
