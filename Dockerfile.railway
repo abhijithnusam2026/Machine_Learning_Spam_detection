@@ -1,0 +1,37 @@
+# Railway deployment image for the Gradio app (app.py), including the
+# live 3-second-window scam monitor. Separate from the root Dockerfile,
+# which runs api_server.py (FastAPI) for a different deployment target.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# ffmpeg: audio resampling. git/cmake/make/g++: build whisper.cpp from source.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    git \
+    cmake \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps before copying the rest of the source so code-only
+# changes don't invalidate this (slow) layer.
+COPY requirements.txt .
+RUN pip install --no-cache-dir uv \
+    && uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu \
+    && uv pip install --system -r requirements.txt
+
+COPY . /app/
+
+# Build whisper.cpp at image build time so the container never has to
+# compile it on first request (InferencePipeline falls back to compiling
+# at runtime if the binary is missing, but that's slow and needs git+cmake
+# present in the final image, which we'd rather avoid keeping around).
+RUN rm -rf whisper.cpp \
+    && git clone https://github.com/ggerganov/whisper.cpp.git \
+    && cd whisper.cpp && make
+
+# Railway injects PORT at runtime; app.py reads it via os.environ.
+EXPOSE 7860
+
+CMD ["python", "app.py"]

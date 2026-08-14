@@ -1,0 +1,13 @@
+.git
+.idea
+.claude
+venv
+__pycache__
+*.pyc
+whisper.cpp
+artifacts
+models/gguf_classifier_pruned
+models/ggml_whisper_pruned
+data
+notebooks
+node_modules

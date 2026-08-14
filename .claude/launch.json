@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gradio-app",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["GRADIO_SERVER_PORT=7861", "venv/bin/python", "app.py"],
+      "port": 7861
+    }
+  ]
+}
