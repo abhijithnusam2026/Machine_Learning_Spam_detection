@@ -52,6 +52,25 @@ def upload_to_dagshub(local_path, remote_path, stage):
         except Exception as e:
             print(f"  [FAILED] S3 Upload failed: {e}")
 
+def download_from_dagshub(remote_path, local_path):
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+    if not (repo_owner and repo_name and token):
+        return False
+
+    try:
+        dagshub.auth.add_app_token(token)
+        s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        s3_client.download_file(repo_name, remote_path, local_path)
+        print(f"  [SUCCESS] Downloaded S3 artifact: {remote_path} -> {local_path}")
+        return True
+    except Exception as e:
+        print(f"  [WARN] Could not download {remote_path}: {e}")
+        return False
+
 def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="models/gguf_classifier", stage=STAGE_NAME):
     print(f"\n--- Exporting Classifier ({model_name}) to GGUF ---")
     os.makedirs(output_dir, exist_ok=True)
@@ -133,6 +152,40 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
 def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/ggml_whisper", stage=STAGE_NAME):
     print(f"\n--- Exporting Whisper ({model_name}) to GGML ---")
     os.makedirs(output_dir, exist_ok=True)
+
+    required_models = {
+        "whisper_f16.bin": os.path.join(output_dir, "whisper_f16.bin"),
+        "whisper_q8_0.bin": os.path.join(output_dir, "whisper_q8_0.bin"),
+        "whisper_q4_k.bin": os.path.join(output_dir, "whisper_q4_k.bin"),
+    }
+    if all(os.path.exists(path) for path in required_models.values()):
+        print("Whisper GGML artifacts already exist locally. Skipping export.")
+        return
+
+    remote_prefixes = [
+        f"artifacts/{stage}/ggml",
+        "artifacts/feature/phase-2-audio-asr/ggml",
+    ]
+    fetched_all = True
+    for filename, local_path in required_models.items():
+        if os.path.exists(local_path):
+            continue
+
+        fetched = False
+        for prefix in remote_prefixes:
+            if download_from_dagshub(f"{prefix}/{filename}", local_path):
+                fetched = True
+                break
+
+        if not fetched:
+            fetched_all = False
+
+    if fetched_all and all(os.path.exists(path) for path in required_models.values()):
+        print("Whisper GGML artifacts resolved from DagsHub.")
+        for filename, local_path in required_models.items():
+            print(f"[SUCCESS] Available: {local_path} ({os.path.getsize(local_path) / (1024*1024):.2f} MB)")
+            upload_to_dagshub(local_path, f"artifacts/{stage}/ggml/{filename}", stage)
+        return
     
     # 1. Clone whisper.cpp
     if not os.path.exists("whisper.cpp"):
