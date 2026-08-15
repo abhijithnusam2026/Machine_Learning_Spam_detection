@@ -108,6 +108,10 @@ def main():
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--max_steps", type=int, default=-1, help="Optional hard cap on training steps for smoke tests")
+    parser.add_argument("--max_train_samples", type=int, default=None, help="Optional training row cap for smoke tests")
+    parser.add_argument("--max_eval_samples", type=int, default=None, help="Optional validation row cap for smoke tests")
+    parser.add_argument("--max_length", type=int, default=None, help="Override tokenizer max length")
     parser.add_argument("--finetune_method", choices=["full", "lora"], default="full")
     parser.add_argument("--lora_r", type=int, default=16)
     parser.add_argument("--lora_alpha", type=int, default=32)
@@ -155,6 +159,25 @@ def main():
     # Universal uses ONLY written text data
     train_df = train_df[train_df["source_domain"] == "written_text"]
     test_df = test_df[test_df["source_domain"] == "written_text"]
+
+    if args.max_train_samples:
+        train_df = train_df.groupby("label", group_keys=False).apply(
+            lambda x: x.sample(
+                n=min(len(x), max(1, round(args.max_train_samples * len(x) / len(train_df)))),
+                random_state=seed,
+            )
+        )
+        if len(train_df) > args.max_train_samples:
+            train_df = train_df.sample(n=args.max_train_samples, random_state=seed)
+    if args.max_eval_samples:
+        test_df = test_df.groupby("label", group_keys=False).apply(
+            lambda x: x.sample(
+                n=min(len(x), max(1, round(args.max_eval_samples * len(x) / len(test_df)))),
+                random_state=seed,
+            )
+        )
+        if len(test_df) > args.max_eval_samples:
+            test_df = test_df.sample(n=args.max_eval_samples, random_state=seed)
     
     assert "text" in train_df.columns and "label" in train_df.columns, "Train CSV must have 'text' and 'label' columns"
     assert "text" in test_df.columns and "label" in test_df.columns, "Test CSV must have 'text' and 'label' columns"
@@ -194,6 +217,8 @@ def main():
     max_len = tokenizer.model_max_length
     if max_len > 100000:
         max_len = 8192  # Fallback for models without a defined max length
+    if args.max_length:
+        max_len = args.max_length
         
     print(f"Tokenization max_length set to: {max_len}")
 
@@ -220,17 +245,25 @@ def main():
     gradient_accumulation_steps = args.batch_size // physical_batch_size
     if gradient_accumulation_steps < 1:
         gradient_accumulation_steps = 1
+
+    eval_strategy = "steps" if args.max_steps and args.max_steps > 0 else "epoch"
+    save_strategy = eval_strategy
+    eval_steps = args.max_steps if args.max_steps and args.max_steps > 0 else None
+    save_steps = eval_steps
         
     training_args = TrainingArguments(
         output_dir=args.output_dir,
-        eval_strategy="epoch",
-        save_strategy="epoch",
+        eval_strategy=eval_strategy,
+        save_strategy=save_strategy,
+        eval_steps=eval_steps,
+        save_steps=save_steps,
         learning_rate=args.lr,
         per_device_train_batch_size=physical_batch_size,
         per_device_eval_batch_size=physical_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=True,  # Crucial for 8192 max_length on 15GB GPUs
         num_train_epochs=args.epochs,
+        max_steps=args.max_steps,
         weight_decay=0.01,
         load_best_model_at_end=True,
         metric_for_best_model="f1",
@@ -281,6 +314,11 @@ def main():
                 "physical_batch_size": physical_batch_size,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
                 "max_length": max_len,
+                "max_steps": args.max_steps,
+                "eval_strategy": eval_strategy,
+                "save_strategy": save_strategy,
+                "max_train_samples": args.max_train_samples,
+                "max_eval_samples": args.max_eval_samples,
             }
         )
         log_split_profile({"train": train_df, "validation": test_df}, artifact_path="dataset_profile")
