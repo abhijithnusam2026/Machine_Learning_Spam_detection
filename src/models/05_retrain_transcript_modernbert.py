@@ -30,6 +30,7 @@ PIPELINE_STAGE = "05_transcript_modernbert"
 
 from datasets import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, average_precision_score, confusion_matrix
+from src.utils.data_access import ensure_processed_data
 from src.utils.mlflow_reporting import log_classification_artifacts, log_split_profile, log_training_history
 from transformers import (
     AutoTokenizer,
@@ -146,11 +147,8 @@ def main():
         os.environ["DAGSHUB_TOKEN"] = password
         dagshub.auth.add_app_token(password)
         
-    # 1. Load data
-    if not os.path.exists(args.train_data) or not os.path.exists(args.test_data):
-        print("ERROR: Datasets not found locally and failed to download from DagsHub.")
-        import sys
-        sys.exit(1)
+    # 1. Load data, fetching processed artifacts from DagsHub MLflow if needed.
+    ensure_processed_data([args.train_data, args.test_data])
         
     train_df = pd.read_csv(args.train_data)
     test_df = pd.read_csv(args.test_data)

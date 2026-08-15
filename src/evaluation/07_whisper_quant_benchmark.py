@@ -12,6 +12,7 @@ import pandas as pd
 import dagshub
 import mlflow
 from dotenv import load_dotenv
+from src.utils.data_access import ensure_audio_holdout
 from src.utils.mlflow_reporting import log_benchmark_plots, log_dataframe_artifact
 
 def get_whisper_model_path(variant):
@@ -55,38 +56,7 @@ def evaluate_whisper():
     
     manifest_path = "data/large_audio_test/manifest.csv"
     
-    load_dotenv()
-    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
-    repo_name = os.getenv("DAGSHUB_REPO_NAME")
-    
-    # Fetch test data from DagsHub S3 if missing
-    if repo_owner and repo_name:
-        s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
-        local_audio_dir = "data/large_audio_test"
-        os.makedirs(local_audio_dir, exist_ok=True)
-        
-        try:
-            s3_client.download_file(repo_name, "data/large_audio_test/manifest.csv", f"{local_audio_dir}/manifest.csv")
-            manifest_df = pd.read_csv(f"{local_audio_dir}/manifest.csv")
-            failed_downloads = []
-            
-            for _, row in manifest_df.iterrows():
-                audio_filename = os.path.basename(row['file'])
-                remote_audio_path = f"data/large_audio_test/{audio_filename}"
-                local_audio_path = f"{local_audio_dir}/{audio_filename}"
-                if not os.path.exists(local_audio_path):
-                    print(f"Downloading {audio_filename}...")
-                    try:
-                        s3_client.download_file(repo_name, remote_audio_path, local_audio_path)
-                    except Exception as inner_e:
-                        print(f"Failed to fetch {audio_filename}: {inner_e}")
-                        failed_downloads.append(audio_filename)
-                        
-            if failed_downloads:
-                raise RuntimeError(f"Audio files failed to download: {failed_downloads}")
-        except Exception as e:
-            print(f"Failed to fetch manifest or audio files: {e}")
-            raise
+    ensure_audio_holdout()
     
     if not os.path.exists(manifest_path):
         print(f"Manifest not found at {manifest_path}. Skipping.")

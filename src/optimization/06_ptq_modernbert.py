@@ -23,6 +23,7 @@ import pandas as pd
 import dagshub
 import mlflow
 from dotenv import load_dotenv
+from src.utils.data_access import ensure_processed_data
 from src.utils.mlflow_reporting import (
     log_benchmark_plots,
     log_classification_artifacts,
@@ -232,7 +233,7 @@ def evaluate_ptq_degradation(stage, eval_data="data/processed/global_test.csv", 
         return
         
     if not os.path.exists(eval_data):
-        raise FileNotFoundError(f"Missing GGUF post-quantization evaluation dataset: {eval_data}")
+        ensure_processed_data([eval_data])
     eval_source_df = pd.read_csv(eval_data).dropna(subset=["text", "label"])
     if len(eval_source_df) > eval_rows:
         df = eval_source_df.groupby(["label"], group_keys=False).apply(
@@ -471,10 +472,7 @@ def run_calibrated_onnx_ptq(
         print(f"[WARNING] ONNX Runtime PTQ dependencies not installed. Skipping calibrated PTQ: {exc}")
         return
 
-    if not os.path.exists(calibration_data):
-        raise FileNotFoundError(f"Missing calibration dataset: {calibration_data}")
-    if not os.path.exists(eval_data):
-        raise FileNotFoundError(f"Missing ONNX PTQ evaluation dataset: {eval_data}")
+    ensure_processed_data([calibration_data, eval_data])
 
     os.makedirs(output_dir, exist_ok=True)
     onnx_fp32_path = os.path.join(output_dir, "modernbert_fp32.onnx")

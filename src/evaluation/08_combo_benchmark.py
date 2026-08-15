@@ -15,6 +15,7 @@ import dagshub
 import mlflow
 from dotenv import load_dotenv
 from src.evaluation.inference_pipeline import InferencePipeline
+from src.utils.data_access import ensure_audio_holdout
 from src.utils.mlflow_reporting import log_benchmark_plots, log_classification_artifacts, log_dataframe_artifact
 
 def get_dir_size(path):
@@ -35,11 +36,8 @@ def get_dir_size(path):
 def evaluate_combinations():
     print("--- Running E2E Combinatorial Benchmarks ---")
     
-    # Check for audio files
     audio_dir = "data/large_audio_test"
-    if not os.path.exists(audio_dir):
-        print(f"Audio directory {audio_dir} not found. Ensure raw data was downloaded.")
-        return
+    ensure_audio_holdout(audio_dir)
         
     files = [f for f in os.listdir(audio_dir) if f.endswith(".wav")]
     files.sort()
