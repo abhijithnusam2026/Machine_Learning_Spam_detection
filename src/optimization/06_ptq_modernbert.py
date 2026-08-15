@@ -2,14 +2,27 @@
 Exports the ASR (Whisper) and Classifier models to GGUF/GGML format 
 for ultra-efficient edge and mobile NPU execution via llama.cpp/whisper.cpp.
 Quantizes them to F16, Q8_0, and Q4_K_M.
+
+Also provides an optional calibrated ONNX Runtime static INT8 PTQ path for
+GPU/CPU benchmark evidence using data/processed/ptq_calibration.csv.
 """
 
 import os
 import argparse
 import subprocess
+import time
+
+import pandas as pd
 
 import dagshub
+import mlflow
 from dotenv import load_dotenv
+from src.utils.mlflow_reporting import (
+    log_benchmark_plots,
+    log_classification_artifacts,
+    log_dataframe_artifact,
+    log_split_profile,
+)
 
 STAGE_NAME = "06_ptq_modernbert"
 
@@ -203,14 +216,7 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
             print(f"[SUCCESS] Generated: {qpath} ({os.path.getsize(qpath) / (1024*1024):.2f} MB)")
             upload_to_dagshub(qpath, f"artifacts/{stage}/ggml/{os.path.basename(qpath)}", stage)
 
-
-import pandas as pd
-import time
-import mlflow
-import dagshub
-from src.utils.mlflow_reporting import log_benchmark_plots, log_classification_artifacts, log_dataframe_artifact, log_split_profile
-
-def evaluate_ptq_degradation(stage):
+def evaluate_ptq_degradation(stage, eval_data="data/processed/global_test.csv", eval_rows=512):
     print("\n--- Evaluating PTQ Degradation ---")
     
     try:
@@ -219,7 +225,20 @@ def evaluate_ptq_degradation(stage):
         print("llama-cpp-python not installed. Skipping PTQ eval.")
         return
         
-    df = pd.read_csv("data/processed/global_train.csv").sample(50, random_state=42)
+    if not os.path.exists(eval_data):
+        raise FileNotFoundError(f"Missing GGUF post-quantization evaluation dataset: {eval_data}")
+    eval_source_df = pd.read_csv(eval_data).dropna(subset=["text", "label"])
+    if len(eval_source_df) > eval_rows:
+        df = eval_source_df.groupby(["label"], group_keys=False).apply(
+            lambda x: x.sample(
+                n=min(len(x), max(1, round(eval_rows * len(x) / len(eval_source_df)))),
+                random_state=42,
+            )
+        )
+        if len(df) > eval_rows:
+            df = df.sample(n=eval_rows, random_state=42)
+    else:
+        df = eval_source_df
     
     models = {
         "F16": f"models/gguf_classifier/classifier_f16.gguf",
@@ -290,7 +309,8 @@ def evaluate_ptq_degradation(stage):
                 "accuracy": acc,
                 "f1_score": f1,
                 "model_path": path,
-                "calibration_rows": len(df),
+                "post_quant_eval_rows": len(df),
+                "post_quant_eval_data": eval_data,
             }
         )
         
@@ -301,13 +321,14 @@ def evaluate_ptq_degradation(stage):
                 mlflow.log_param("precision_variant", name)
                 mlflow.log_param("model_path", path)
                 mlflow.log_param("classifier_head_path", head_path)
-                mlflow.log_param("calibration_dataset", "data/processed/global_train.csv")
-                mlflow.log_metric("calibration_rows", len(df))
+                mlflow.log_param("quantization_method", "weight_only_gguf")
+                mlflow.log_param("post_quant_evaluation_dataset", eval_data)
+                mlflow.log_metric("post_quant_eval_rows", len(df))
                 mlflow.log_metric("latency_sec", latency)
                 mlflow.log_metric("size_mb", size_mb)
                 mlflow.log_metric("accuracy", acc)
                 mlflow.log_metric("f1_score", f1)
-                log_split_profile({"ptq_calibration_sample": df}, artifact_path="calibration")
+                log_split_profile({"gguf_post_quant_eval": df}, artifact_path="post_quant_eval")
                 log_classification_artifacts(y_true, y_pred, artifact_path="evaluation", prefix=f"ptq_{name.lower()}")
                 mlflow.log_artifact(path, artifact_path="models")
 
@@ -319,10 +340,322 @@ def evaluate_ptq_degradation(stage):
             log_dataframe_artifact(results_df, "ptq_benchmark_summary.csv", "benchmarks")
             log_benchmark_plots(results_df, "variant", ["accuracy", "f1_score", "latency_sec", "size_mb"], "benchmarks", "ptq")
 
+class TextCalibrationDataReader:
+    def __init__(self, df, tokenizer, input_names, max_length=512, batch_size=8):
+        self.batches = []
+        texts = df["text"].astype(str).tolist()
+        for start in range(0, len(texts), batch_size):
+            batch_texts = texts[start:start + batch_size]
+            encoded = tokenizer(
+                batch_texts,
+                padding=True,
+                truncation=True,
+                max_length=max_length,
+                return_tensors="np",
+            )
+            batch = {}
+            for name in input_names:
+                if name in encoded:
+                    batch[name] = encoded[name]
+                elif name == "token_type_ids":
+                    batch[name] = encoded["input_ids"] * 0
+            self.batches.append(batch)
+        self.index = 0
+
+    def get_next(self):
+        if self.index >= len(self.batches):
+            return None
+        batch = self.batches[self.index]
+        self.index += 1
+        return batch
+
+    def rewind(self):
+        self.index = 0
+
+def _init_mlflow_experiment():
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    if repo_owner and repo_name:
+        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
+        mlflow.set_experiment("scam-detection/refactored_pipeline/06_ptq_modernbert")
+    return repo_owner, repo_name
+
+def _load_classifier_components(model_name, device):
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    if model_name.startswith("models:/"):
+        components = mlflow.transformers.load_model(model_name, return_type="components")
+        tokenizer = components["tokenizer"]
+        model = components["model"]
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+    model.to(device)
+    model.eval()
+    return tokenizer, model
+
+def _onnx_inputs(tokenizer, texts, input_names, max_length):
+    encoded = tokenizer(
+        list(texts),
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+        return_tensors="np",
+    )
+    inputs = {}
+    for name in input_names:
+        if name in encoded:
+            inputs[name] = encoded[name]
+        elif name == "token_type_ids":
+            inputs[name] = encoded["input_ids"] * 0
+    return inputs
+
+def _benchmark_onnx(onnx_path, eval_df, tokenizer, max_length, batch_size=8, providers=None):
+    import numpy as np
+    import onnxruntime as ort
+    from sklearn.metrics import accuracy_score, f1_score
+
+    session = ort.InferenceSession(
+        onnx_path,
+        providers=providers or ["CPUExecutionProvider"],
+    )
+    input_names = [inp.name for inp in session.get_inputs()]
+
+    y_true = eval_df["label"].astype(int).tolist()
+    y_pred = []
+    start_time = time.time()
+    for start in range(0, len(eval_df), batch_size):
+        batch = eval_df.iloc[start:start + batch_size]
+        inputs = _onnx_inputs(tokenizer, batch["text"].astype(str).tolist(), input_names, max_length)
+        logits = session.run(None, inputs)[0]
+        y_pred.extend(np.argmax(logits, axis=-1).astype(int).tolist())
+    latency = (time.time() - start_time) / len(eval_df)
+
+    return {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "f1_score": f1_score(y_true, y_pred),
+        "latency_sec": latency,
+        "y_true": y_true,
+        "y_pred": y_pred,
+    }
+
+def run_calibrated_onnx_ptq(
+    model_name,
+    calibration_data="data/processed/ptq_calibration.csv",
+    eval_data="data/processed/global_test.csv",
+    output_dir="models/onnx_modernbert",
+    max_length=512,
+    batch_size=8,
+    opset=17,
+    eval_rows=512,
+):
+    print("\n--- Running calibrated ONNX Runtime static INT8 PTQ ---")
+
+    try:
+        import numpy as np
+        import torch
+        from onnxruntime.quantization import (
+            CalibrationMethod,
+            QuantFormat,
+            QuantType,
+            quantize_static,
+        )
+    except ImportError as exc:
+        print(f"[WARNING] ONNX Runtime PTQ dependencies not installed. Skipping calibrated PTQ: {exc}")
+        return
+
+    if not os.path.exists(calibration_data):
+        raise FileNotFoundError(f"Missing calibration dataset: {calibration_data}")
+    if not os.path.exists(eval_data):
+        raise FileNotFoundError(f"Missing ONNX PTQ evaluation dataset: {eval_data}")
+
+    os.makedirs(output_dir, exist_ok=True)
+    onnx_fp32_path = os.path.join(output_dir, "modernbert_fp32.onnx")
+    onnx_int8_path = os.path.join(output_dir, "modernbert_int8_static.onnx")
+
+    calibration_df = pd.read_csv(calibration_data).dropna(subset=["text", "label"])
+    eval_df = pd.read_csv(eval_data).dropna(subset=["text", "label"])
+    eval_df = eval_df[eval_df["source_domain"] == "spoken_asr"] if "source_domain" in eval_df.columns else eval_df
+    if eval_df.empty:
+        eval_df = pd.read_csv(eval_data).dropna(subset=["text", "label"])
+    if len(eval_df) > eval_rows:
+        eval_df = eval_df.groupby(["label"], group_keys=False).apply(
+            lambda x: x.sample(
+                n=min(len(x), max(1, round(eval_rows * len(x) / len(eval_df)))),
+                random_state=42,
+            )
+        )
+        if len(eval_df) > eval_rows:
+            eval_df = eval_df.sample(n=eval_rows, random_state=42)
+
+    calibration_texts = set(calibration_df["text"].astype(str))
+    eval_texts = set(eval_df["text"].astype(str))
+    assert calibration_texts.isdisjoint(eval_texts), "ONNX PTQ calibration data overlaps evaluation data"
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tokenizer, model = _load_classifier_components(model_name, device=device)
+
+    sample = tokenizer(
+        ["representative calibration export sample"],
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+        return_tensors="pt",
+    )
+    sample = {k: v.to(device) for k, v in sample.items() if k in ["input_ids", "attention_mask", "token_type_ids"]}
+    input_names = list(sample.keys())
+    dynamic_axes = {name: {0: "batch", 1: "sequence"} for name in input_names}
+    dynamic_axes["logits"] = {0: "batch"}
+
+    class OnnxSequenceClassifier(torch.nn.Module):
+        def __init__(self, base_model, ordered_input_names):
+            super().__init__()
+            self.base_model = base_model
+            self.ordered_input_names = ordered_input_names
+
+        def forward(self, *args):
+            inputs = dict(zip(self.ordered_input_names, args))
+            return self.base_model(**inputs).logits
+
+    export_model = OnnxSequenceClassifier(model, input_names).to(device).eval()
+
+    if not os.path.exists(onnx_fp32_path):
+        print(f"Exporting FP32 ONNX model to {onnx_fp32_path}...")
+        with torch.no_grad():
+            torch.onnx.export(
+                export_model,
+                tuple(sample.values()),
+                onnx_fp32_path,
+                input_names=input_names,
+                output_names=["logits"],
+                dynamic_axes=dynamic_axes,
+                opset_version=opset,
+            )
+    else:
+        print(f"Using existing FP32 ONNX model at {onnx_fp32_path}")
+
+    reader = TextCalibrationDataReader(
+        calibration_df,
+        tokenizer,
+        input_names=input_names,
+        max_length=max_length,
+        batch_size=batch_size,
+    )
+    print(f"Quantizing ONNX model with {len(calibration_df)} calibration rows...")
+    quantize_static(
+        model_input=onnx_fp32_path,
+        model_output=onnx_int8_path,
+        calibration_data_reader=reader,
+        quant_format=QuantFormat.QDQ,
+        activation_type=QuantType.QInt8,
+        weight_type=QuantType.QInt8,
+        calibrate_method=CalibrationMethod.MinMax,
+        per_channel=True,
+    )
+
+    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if device == "cuda" else ["CPUExecutionProvider"]
+    fp32_metrics = _benchmark_onnx(onnx_fp32_path, eval_df, tokenizer, max_length, batch_size, providers)
+    int8_metrics = _benchmark_onnx(onnx_int8_path, eval_df, tokenizer, max_length, batch_size, providers)
+
+    fp32_size_mb = os.path.getsize(onnx_fp32_path) / (1024 * 1024)
+    int8_size_mb = os.path.getsize(onnx_int8_path) / (1024 * 1024)
+    results_df = pd.DataFrame(
+        [
+            {
+                "variant": "onnx_fp32",
+                "accuracy": fp32_metrics["accuracy"],
+                "f1_score": fp32_metrics["f1_score"],
+                "latency_sec": fp32_metrics["latency_sec"],
+                "size_mb": fp32_size_mb,
+                "model_path": onnx_fp32_path,
+            },
+            {
+                "variant": "onnx_int8_static",
+                "accuracy": int8_metrics["accuracy"],
+                "f1_score": int8_metrics["f1_score"],
+                "latency_sec": int8_metrics["latency_sec"],
+                "size_mb": int8_size_mb,
+                "model_path": onnx_int8_path,
+            },
+        ]
+    )
+
+    repo_owner, repo_name = _init_mlflow_experiment()
+    if repo_owner and repo_name:
+        with mlflow.start_run(run_name="onnx_static_int8_ptq"):
+            mlflow.set_tag("project_stage", "refactored_pipeline")
+            mlflow.set_tag("pipeline_stage", STAGE_NAME)
+            mlflow.set_tag("quantization_family", "calibrated_static_int8")
+            mlflow.log_param("model_name", model_name)
+            mlflow.log_param("calibration_dataset", calibration_data)
+            mlflow.log_param("evaluation_dataset", eval_data)
+            mlflow.log_param("calibration_rows", len(calibration_df))
+            mlflow.log_param("evaluation_rows", len(eval_df))
+            mlflow.log_param("onnx_opset", opset)
+            mlflow.log_param("onnx_max_length", max_length)
+            mlflow.log_param("calibration_method", "MinMax")
+            mlflow.log_param("quant_format", "QDQ")
+            mlflow.log_metric("onnx_fp32_accuracy", fp32_metrics["accuracy"])
+            mlflow.log_metric("onnx_fp32_f1_score", fp32_metrics["f1_score"])
+            mlflow.log_metric("onnx_fp32_latency_sec", fp32_metrics["latency_sec"])
+            mlflow.log_metric("onnx_fp32_size_mb", fp32_size_mb)
+            mlflow.log_metric("onnx_int8_static_accuracy", int8_metrics["accuracy"])
+            mlflow.log_metric("onnx_int8_static_f1_score", int8_metrics["f1_score"])
+            mlflow.log_metric("onnx_int8_static_latency_sec", int8_metrics["latency_sec"])
+            mlflow.log_metric("onnx_int8_static_size_mb", int8_size_mb)
+            mlflow.log_metric("accuracy_delta_int8_minus_fp32", int8_metrics["accuracy"] - fp32_metrics["accuracy"])
+            mlflow.log_metric("f1_delta_int8_minus_fp32", int8_metrics["f1_score"] - fp32_metrics["f1_score"])
+            mlflow.log_metric("size_reduction_mb", fp32_size_mb - int8_size_mb)
+            log_split_profile(
+                {
+                    "onnx_ptq_calibration": calibration_df,
+                    "onnx_ptq_evaluation": eval_df,
+                },
+                artifact_path="onnx_ptq_dataset_profile",
+            )
+            log_dataframe_artifact(results_df, "onnx_static_int8_ptq_summary.csv", "onnx_ptq")
+            log_benchmark_plots(
+                results_df,
+                "variant",
+                ["accuracy", "f1_score", "latency_sec", "size_mb"],
+                "onnx_ptq",
+                "onnx_static_int8",
+            )
+            log_classification_artifacts(
+                fp32_metrics["y_true"],
+                fp32_metrics["y_pred"],
+                artifact_path="onnx_ptq/evaluation",
+                prefix="onnx_fp32",
+            )
+            log_classification_artifacts(
+                int8_metrics["y_true"],
+                int8_metrics["y_pred"],
+                artifact_path="onnx_ptq/evaluation",
+                prefix="onnx_int8_static",
+            )
+            mlflow.log_artifact(calibration_data, artifact_path="onnx_ptq/dataset")
+            mlflow.log_artifact(eval_data, artifact_path="onnx_ptq/dataset")
+            mlflow.log_artifact(onnx_fp32_path, artifact_path="onnx_ptq/models")
+            mlflow.log_artifact(onnx_int8_path, artifact_path="onnx_ptq/models")
+
+    upload_to_dagshub(onnx_fp32_path, f"artifacts/{STAGE_NAME}/onnx/{os.path.basename(onnx_fp32_path)}", STAGE_NAME)
+    upload_to_dagshub(onnx_int8_path, f"artifacts/{STAGE_NAME}/onnx/{os.path.basename(onnx_int8_path)}", STAGE_NAME)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="./scam-classifier-model-transcript")
     parser.add_argument("--whisper_name", type=str, default="openai/whisper-tiny")
+    parser.add_argument("--skip_onnx_ptq", action="store_true", help="Skip calibrated ONNX Runtime static INT8 PTQ")
+    parser.add_argument("--ptq_calibration_data", type=str, default="data/processed/ptq_calibration.csv")
+    parser.add_argument("--gguf_eval_data", type=str, default="data/processed/global_test.csv")
+    parser.add_argument("--gguf_eval_rows", type=int, default=512)
+    parser.add_argument("--onnx_eval_data", type=str, default="data/processed/global_test.csv")
+    parser.add_argument("--onnx_output_dir", type=str, default="models/onnx_modernbert")
+    parser.add_argument("--onnx_max_length", type=int, default=512)
+    parser.add_argument("--onnx_batch_size", type=int, default=8)
+    parser.add_argument("--onnx_opset", type=int, default=17)
+    parser.add_argument("--onnx_eval_rows", type=int, default=512)
     args = parser.parse_args()
     stage = STAGE_NAME
 
@@ -334,4 +667,15 @@ if __name__ == "__main__":
     export_dir_wh = "models/ggml_whisper_pruned" if "pruned" in args.whisper_name else "models/ggml_whisper"
     export_whisper_to_ggml(model_name=args.whisper_name, output_dir=export_dir_wh, stage=export_stage_wh)
 
-    evaluate_ptq_degradation(stage)
+    evaluate_ptq_degradation(stage, eval_data=args.gguf_eval_data, eval_rows=args.gguf_eval_rows)
+    if not args.skip_onnx_ptq:
+        run_calibrated_onnx_ptq(
+            model_name=args.model_name,
+            calibration_data=args.ptq_calibration_data,
+            eval_data=args.onnx_eval_data,
+            output_dir=args.onnx_output_dir,
+            max_length=args.onnx_max_length,
+            batch_size=args.onnx_batch_size,
+            opset=args.onnx_opset,
+            eval_rows=args.onnx_eval_rows,
+        )

@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from src.utils.mlflow_reporting import log_dataframe_artifact, log_split_profile
 
 SEED = 42
+PTQ_CALIBRATION_ROWS = 256
 random.seed(SEED)
 
 def clean_text(text):
@@ -19,6 +20,34 @@ def clean_text(text):
     text = re.sub(r'\[.*?\]', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text.lower()
+
+def stratified_sample(df, n, strata_cols, random_state):
+    if df.empty:
+        return df.copy()
+
+    n = min(n, len(df))
+    selected_parts = []
+    selected_indices = set()
+
+    grouped = list(df.groupby(strata_cols, group_keys=False, dropna=False))
+    for _, group in grouped:
+        group_n = max(1, round(n * len(group) / len(df)))
+        group_n = min(group_n, len(group))
+        sampled = group.sample(n=group_n, random_state=random_state)
+        selected_parts.append(sampled)
+        selected_indices.update(sampled.index.tolist())
+
+    sampled_df = pd.concat(selected_parts).drop_duplicates(subset=["text"])
+    if len(sampled_df) > n:
+        sampled_df = sampled_df.sample(n=n, random_state=random_state)
+    elif len(sampled_df) < n:
+        remaining = df.drop(index=list(selected_indices), errors="ignore")
+        if not remaining.empty:
+            fill_n = min(n - len(sampled_df), len(remaining))
+            fill_df = remaining.sample(n=fill_n, random_state=random_state)
+            sampled_df = pd.concat([sampled_df, fill_df]).drop_duplicates(subset=["text"])
+
+    return sampled_df.sample(frac=1.0, random_state=random_state).reset_index(drop=True)
 
 def main():
     print("--- Building Unified Modular Datasets ---")
@@ -105,10 +134,25 @@ def main():
     global_test.to_csv("data/processed/global_test.csv", index=False)
     global_train.to_csv("data/processed/global_train.csv", index=False)
     global_val.to_csv("data/processed/global_val.csv", index=False)
+
+    ptq_calibration = stratified_sample(
+        global_train,
+        n=PTQ_CALIBRATION_ROWS,
+        strata_cols=["label", "source_domain"],
+        random_state=SEED,
+    )
+    ptq_calibration.to_csv("data/processed/ptq_calibration.csv", index=False)
+
+    val_texts = set(global_val["text"].astype(str))
+    test_texts = set(global_test["text"].astype(str))
+    calibration_texts = set(ptq_calibration["text"].astype(str))
+    assert calibration_texts.isdisjoint(val_texts), "PTQ calibration data leaked into validation split"
+    assert calibration_texts.isdisjoint(test_texts), "PTQ calibration data leaked into global holdout split"
     
     print(f"Global Train Set: {len(global_train)} rows")
     print(f"Global Val Set:   {len(global_val)} rows")
     print(f"Global Test Set:  {len(global_test)} rows (Frozen for final evaluation)")
+    print(f"PTQ Calibration:  {len(ptq_calibration)} rows (sampled from train only)")
     
     print("\nDataset building complete. Data ready for modeling in data/processed/.")
 
@@ -126,12 +170,15 @@ def main():
             mlflow.log_param("split_strategy", "20% frozen global holdout, then 20% validation from remaining data")
             mlflow.log_param("deduplication_key", "cleaned_text")
             mlflow.log_param("stratification_columns", "label,source_domain")
+            mlflow.log_param("ptq_calibration_source", "global_train only")
+            mlflow.log_param("ptq_calibration_target_rows", PTQ_CALIBRATION_ROWS)
 
             log_split_profile(
                 {
                     "global_train": global_train,
                     "global_val": global_val,
                     "global_test": global_test,
+                    "ptq_calibration": ptq_calibration,
                 },
                 artifact_path="dataset_profile",
             )
@@ -147,6 +194,7 @@ def main():
             mlflow.log_artifact("data/processed/global_train.csv", artifact_path="processed")
             mlflow.log_artifact("data/processed/global_val.csv", artifact_path="processed")
             mlflow.log_artifact("data/processed/global_test.csv", artifact_path="processed")
+            mlflow.log_artifact("data/processed/ptq_calibration.csv", artifact_path="processed")
             print("\nSuccessfully logged processed datasets to DagsHub MLflow.")
 
 if __name__ == "__main__":

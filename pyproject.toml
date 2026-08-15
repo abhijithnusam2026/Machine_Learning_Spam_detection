@@ -53,6 +53,11 @@ gpu = [
   "auto-gptq==0.7.1",
   "onnxruntime-gpu>=1.19.0,<2.0.0"
 ]
+onnx = [
+  "onnx==1.16.1",
+  "onnxruntime==1.19.2",
+  "protobuf==4.25.4"
+]
 
 
 
