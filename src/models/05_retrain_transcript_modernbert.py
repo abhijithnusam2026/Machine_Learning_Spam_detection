@@ -41,6 +41,33 @@ from transformers import (
 )
 
 
+def apply_lora(model, args):
+    try:
+        from peft import LoraConfig, TaskType, get_peft_model
+    except ImportError as exc:
+        raise ImportError(
+            "LoRA fine-tuning requires peft. Install dependencies with `pip install -r requirements.txt`."
+        ) from exc
+
+    target_modules = (
+        args.lora_target_modules
+        if args.lora_target_modules == "all-linear"
+        else [item.strip() for item in args.lora_target_modules.split(",") if item.strip()]
+    )
+    lora_config = LoraConfig(
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        bias="none",
+        task_type=TaskType.SEQ_CLS,
+        target_modules=target_modules,
+        modules_to_save=["classifier"],
+    )
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+    return model
+
+
 def get_device():
     if torch.backends.mps.is_available():
         return "mps"
@@ -81,6 +108,16 @@ def main():
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--finetune_method", choices=["full", "lora"], default="full")
+    parser.add_argument("--lora_r", type=int, default=16)
+    parser.add_argument("--lora_alpha", type=int, default=32)
+    parser.add_argument("--lora_dropout", type=float, default=0.05)
+    parser.add_argument(
+        "--lora_target_modules",
+        type=str,
+        default="all-linear",
+        help="Comma-separated module names or 'all-linear' for PEFT LoRA target modules.",
+    )
     parser.add_argument("--push_to_hub", action="store_true", help="Push model to Hugging Face Hub privately")
     args = parser.parse_args()
     stage_slug = PIPELINE_STAGE.replace("/", "-")
@@ -152,6 +189,10 @@ def main():
             args.model_name, num_labels=2
         )
         model.to(device)
+
+    if args.finetune_method == "lora":
+        print("Applying LoRA adapters for parameter-efficient transcript retraining...")
+        model = apply_lora(model, args)
     
     max_len = tokenizer.model_max_length
     if max_len > 100000:
@@ -218,11 +259,12 @@ def main():
     # 5. Train
     print("Starting MLflow run to log datasets and metrics...")
     mlflow.set_experiment("scam-detection/refactored_pipeline/05_transcript_modernbert")
-    with mlflow.start_run(run_name="05-transcript-retraining"):
+    with mlflow.start_run(run_name=f"05-transcript-retraining-{args.finetune_method}"):
         mlflow.log_artifact(args.train_data, "dataset")
         mlflow.log_artifact(args.test_data, "dataset")
         mlflow.set_tag("project_stage", "refactored_pipeline")
         mlflow.set_tag("pipeline_stage", PIPELINE_STAGE)
+        mlflow.set_tag("finetune_method", args.finetune_method)
         mlflow.log_params(
             {
                 "pipeline_stage": PIPELINE_STAGE,
@@ -233,6 +275,11 @@ def main():
                 "epochs": args.epochs,
                 "batch_size": args.batch_size,
                 "learning_rate": args.lr,
+                "finetune_method": args.finetune_method,
+                "lora_r": args.lora_r if args.finetune_method == "lora" else None,
+                "lora_alpha": args.lora_alpha if args.finetune_method == "lora" else None,
+                "lora_dropout": args.lora_dropout if args.finetune_method == "lora" else None,
+                "lora_target_modules": args.lora_target_modules if args.finetune_method == "lora" else None,
                 "seed": seed,
                 "physical_batch_size": physical_batch_size,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
@@ -279,6 +326,11 @@ def main():
             print(f"{args.model_name} accuracy, long transcripts (> {max_len} tokens): {acc_long:.2%} (N={long_mask.sum()})")
 
 
+        if args.finetune_method == "lora":
+            print("Merging LoRA adapters into the base model for downstream PTQ/export compatibility...")
+            trainer.model = trainer.model.merge_and_unload()
+            trainer.model.to(device)
+
         # 7. Save final model + tokenizer
         trainer.save_model(args.output_dir)
         tokenizer.save_pretrained(args.output_dir)
@@ -293,7 +345,7 @@ def main():
         
         # Format the model name for the registry (e.g. "distilbert-base-uncased" -> "distilbert-base-uncased-Scam-Classifier")
         clean_model_name = args.model_name.split("/")[-1]
-        registry_name = f"{clean_model_name}-Scam-Classifier-{stage_slug}"
+        registry_name = f"{clean_model_name}-Scam-Classifier-{stage_slug}-{args.finetune_method}"
         
         mlflow.transformers.log_model(
             transformers_model=components,

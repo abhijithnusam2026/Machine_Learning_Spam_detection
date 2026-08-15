@@ -71,6 +71,27 @@ To validate processed train/validation/test/PTQ partitions before launching long
 make validate-data
 ```
 
+### Fast LoRA Completion Path
+To complete the end-to-end pipeline quickly, train ModernBERT with LoRA, merge the adapter into a normal Hugging Face model directory, then pass that explicit model directory into transcript retraining and PTQ:
+
+```bash
+python src/models/04_train_universal_modernbert.py \
+  --finetune_method lora \
+  --epochs 4 \
+  --output_dir ./scam-classifier-model-universal-lora
+
+python src/models/05_retrain_transcript_modernbert.py \
+  --model_name ./scam-classifier-model-universal-lora \
+  --finetune_method lora \
+  --epochs 4 \
+  --output_dir ./scam-classifier-model-transcript-lora
+
+python src/optimization/06_ptq_modernbert.py \
+  --model_name ./scam-classifier-model-transcript-lora
+```
+
+For the slower full-parameter comparison run, use `--finetune_method full` and pass that full model output directory into the same transcript retraining and PTQ commands.
+
 ### Live Deployment
 The Gradio App and FastAPI inference servers are located in `src/deployment/`.
 ```bash
