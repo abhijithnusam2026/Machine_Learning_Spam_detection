@@ -1,9 +1,7 @@
 name: Sync to Hugging Face Hub
 
 on:
-  push:
-    # We are tracking this specific branch for the cloud deployment test!
-    branches: ["feature/phase-4-cloud-deployment"]
+  workflow_dispatch:
 
 jobs:
   sync:

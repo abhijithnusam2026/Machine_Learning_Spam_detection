@@ -11,8 +11,6 @@ import pandas as pd
 import torch
 import os
 import random
-import subprocess
-from pathlib import Path
 
 import mlflow
 import requests
@@ -22,34 +20,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-BRANCH_STAGE_MAP = {
-    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
-    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
-    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
-    "model-long-context": "model-modernbert-universal",
-    "model-distilbert": "model-distilbert",
-    "main": "main",
-}
-
-
-def detect_branch(default="main"):
-    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
-    if env_branch:
-        return env_branch.strip()
-    result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    branch = result.stdout.strip()
-    return branch or default
-
-
-def stage_for_branch(branch):
-    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
+PIPELINE_STAGE = "03_baseline_distilbert"
 
 from datasets import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, average_precision_score, confusion_matrix
@@ -104,9 +75,7 @@ def main():
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--push_to_hub", action="store_true", help="Push model to Hugging Face Hub privately")
     args = parser.parse_args()
-    branch = detect_branch()
-    stage = stage_for_branch(branch)
-    stage_slug = stage.replace("/", "-")
+    stage_slug = PIPELINE_STAGE.replace("/", "-")
 
     # Enforce strict reproducibility
     seed = 42
@@ -245,7 +214,7 @@ def main():
         mlflow.log_artifact(args.train_data, "dataset")
         mlflow.log_artifact(args.test_data, "dataset")
         mlflow.set_tag("project_stage", "refactored_pipeline")
-        mlflow.set_tag("git_branch", branch)
+        mlflow.set_tag("pipeline_stage", PIPELINE_STAGE)
         trainer.train()
 
         # 6. Evaluate
@@ -297,7 +266,7 @@ def main():
         
         mlflow.transformers.log_model(
             transformers_model=components,
-            artifact_path=f"{stage}/{clean_model_name}",
+            artifact_path=f"{PIPELINE_STAGE}/{clean_model_name}",
             registered_model_name=registry_name,
             task="text-classification"
         )
