@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -57,11 +58,15 @@ def _download_processed_from_mlflow(local_paths):
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 artifact_path = f"processed/{local_path.name}"
                 print(f"Fetching {artifact_path} from MLflow run {run_id}...")
-                mlflow.artifacts.download_artifacts(
+                downloaded_path = Path(mlflow.artifacts.download_artifacts(
                     run_id=run_id,
                     artifact_path=artifact_path,
                     dst_path=str(local_path.parent),
-                )
+                ))
+                if downloaded_path.is_dir():
+                    downloaded_path = downloaded_path / local_path.name
+                if downloaded_path.resolve() != local_path.resolve():
+                    shutil.copy2(downloaded_path, local_path)
             return
         except Exception as exc:
             last_error = exc
