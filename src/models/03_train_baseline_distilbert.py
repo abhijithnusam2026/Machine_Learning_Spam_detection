@@ -31,7 +31,12 @@ PIPELINE_STAGE = "03_baseline_distilbert"
 from datasets import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, average_precision_score, confusion_matrix
 from src.utils.data_access import ensure_processed_data
-from src.utils.mlflow_reporting import log_classification_artifacts, log_split_profile, log_training_history
+from src.utils.mlflow_reporting import (
+    log_classification_artifacts,
+    log_split_profile,
+    log_training_history,
+    log_transformer_model_with_fallback,
+)
 from transformers import (
     AutoTokenizer,
     AutoModelForSequenceClassification,
@@ -292,14 +297,14 @@ def main():
         clean_model_name = args.model_name.split("/")[-1]
         registry_name = f"{clean_model_name}-Scam-Classifier-{stage_slug}"
         
-        mlflow.transformers.log_model(
-            transformers_model=components,
+        log_transformer_model_with_fallback(
+            components=components,
+            output_dir=args.output_dir,
             artifact_path=f"{PIPELINE_STAGE}/{clean_model_name}",
             registered_model_name=registry_name,
-            task="text-classification"
+            task="text-classification",
         )
         log_training_history(trainer.state.log_history, artifact_path="training", prefix=PIPELINE_STAGE)
-        print(f"Model successfully registered to DagsHub Model Registry as '{registry_name}'!")
 
     if push_to_hub:
         print(f"Pushing model to Hugging Face Hub (repo: {hub_model_id})...")

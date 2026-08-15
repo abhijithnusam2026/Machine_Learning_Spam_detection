@@ -26,6 +26,46 @@ def log_json_artifact(payload, name, artifact_path):
         mlflow.log_artifact(path, artifact_path=artifact_path)
 
 
+def log_transformer_model_with_fallback(
+    components,
+    output_dir,
+    artifact_path,
+    registered_model_name,
+    task="text-classification",
+):
+    try:
+        mlflow.transformers.log_model(
+            transformers_model=components,
+            artifact_path=artifact_path,
+            registered_model_name=registered_model_name,
+            task=task,
+        )
+        mlflow.set_tag("model_logging_mode", "mlflow_transformers_registry")
+        print(f"Model successfully registered to DagsHub Model Registry as '{registered_model_name}'!")
+        return "mlflow_transformers_registry"
+    except Exception as exc:
+        print(f"[WARN] MLflow transformers registry logging failed: {exc}")
+        print("Falling back to logging the saved Hugging Face model directory as MLflow artifacts.")
+        fallback_artifact_path = f"{artifact_path}/hf_model_artifacts"
+        mlflow.log_artifacts(output_dir, artifact_path=fallback_artifact_path)
+        mlflow.set_tag("model_logging_mode", "hf_artifact_fallback")
+        mlflow.set_tag("model_registry_name_requested", registered_model_name)
+        mlflow.log_param("model_artifact_fallback_path", fallback_artifact_path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "model_registry_fallback_reason.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(
+                    "mlflow.transformers.log_model failed, so the already-saved Hugging Face "
+                    "model directory was logged as ordinary MLflow artifacts instead.\n\n"
+                    f"Requested registered model name: {registered_model_name}\n"
+                    f"Fallback artifact path: {fallback_artifact_path}\n"
+                    f"Exception: {repr(exc)}\n"
+                )
+            mlflow.log_artifact(path, artifact_path=artifact_path)
+        print(f"Model artifacts logged under MLflow artifact path '{fallback_artifact_path}'.")
+        return "hf_artifact_fallback"
+
+
 def describe_split(df, split_name):
     summary = {
         "split": split_name,
