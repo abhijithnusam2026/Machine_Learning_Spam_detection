@@ -39,6 +39,7 @@ from src.utils.mlflow_reporting import (
     log_transformer_model_with_fallback,
 )
 from transformers import (
+    AutoConfig,
     AutoTokenizer,
     AutoModelForSequenceClassification,
     TrainingArguments,
@@ -46,6 +47,13 @@ from transformers import (
     DataCollatorWithPadding,
     set_seed,
 )
+
+
+def disable_modernbert_reference_compile(model_or_config):
+    """Disable ModernBERT torch.compile kernels unless explicitly re-enabled by code."""
+    config = getattr(model_or_config, "config", model_or_config)
+    if hasattr(config, "reference_compile"):
+        config.reference_compile = False
 
 
 def apply_lora(model, args):
@@ -71,6 +79,8 @@ def apply_lora(model, args):
         modules_to_save=["classifier"],
     )
     model = get_peft_model(model, lora_config)
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
     model.print_trainable_parameters()
     return model
 
@@ -232,6 +242,7 @@ def main():
             components = mlflow.transformers.load_model(local_model_path, return_type="components")
             tokenizer = components["tokenizer"]
             model = components["model"]
+            disable_modernbert_reference_compile(model)
             model.to(device)
             # We must set this so metrics tracking knows the original architecture name
             args.model_name = "ModernBERT" 
@@ -241,8 +252,10 @@ def main():
             sys.exit(1)
     else:
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+        config = AutoConfig.from_pretrained(args.model_name, num_labels=2)
+        disable_modernbert_reference_compile(config)
         model = AutoModelForSequenceClassification.from_pretrained(
-            args.model_name, num_labels=2
+            args.model_name, config=config
         )
         model.to(device)
 
@@ -356,6 +369,7 @@ def main():
                 "save_strategy": save_strategy,
                 "max_train_samples": args.max_train_samples,
                 "max_eval_samples": args.max_eval_samples,
+                "modernbert_reference_compile": False,
             }
         )
         log_split_profile({"train": train_df, "validation": test_df}, artifact_path="dataset_profile")
