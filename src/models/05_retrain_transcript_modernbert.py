@@ -91,12 +91,12 @@ def compute_metrics(eval_pred):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_data", type=str, default="data/phase2_asr/train.csv", help="Path to train CSV")
-    parser.add_argument("--test_data", type=str, default="data/phase2_asr/test.csv", help="Path to test CSV")
+    parser.add_argument("--train_data", type=str, default="data/processed/global_train.csv", help="Path to train CSV")
+    parser.add_argument("--test_data", type=str, default="data/processed/global_val.csv", help="Path to test CSV")
     parser.add_argument(
         "--model_name",
         type=str,
-        default="models:/ModernBERT-Scam-Classifier-model-modernbert-universal/latest",
+        default="./scam-classifier-model",
     )
     parser.add_argument("--output_dir", type=str, default="./scam-classifier-model")
     parser.add_argument("--epochs", type=int, default=4)
@@ -153,6 +153,10 @@ def main():
         
     train_df = pd.read_csv(args.train_data)
     test_df = pd.read_csv(args.test_data)
+    
+    # Transcript retraining uses ONLY spoken ASR data
+    train_df = train_df[train_df["source_domain"] == "spoken_asr"]
+    test_df = test_df[test_df["source_domain"] == "spoken_asr"]
     
     assert "text" in train_df.columns and "label" in train_df.columns, "Train CSV must have 'text' and 'label' columns"
     assert "text" in test_df.columns and "label" in test_df.columns, "Test CSV must have 'text' and 'label' columns"
@@ -249,11 +253,11 @@ def main():
 
     # 5. Train
     print("Starting MLflow run to log datasets and metrics...")
-    mlflow.set_experiment(f"scam-detection/{stage}/train")
-    with mlflow.start_run(run_name=f"{stage}-train"):
+    mlflow.set_experiment("scam-detection/refactored_pipeline/05_transcript_modernbert")
+    with mlflow.start_run(run_name="05-transcript-retraining"):
         mlflow.log_artifact(args.train_data, "dataset")
         mlflow.log_artifact(args.test_data, "dataset")
-        mlflow.set_tag("project_stage", stage)
+        mlflow.set_tag("project_stage", "refactored_pipeline")
         mlflow.set_tag("git_branch", branch)
         trainer.train()
 
