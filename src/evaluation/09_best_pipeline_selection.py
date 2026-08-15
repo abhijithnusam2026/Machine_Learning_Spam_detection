@@ -54,12 +54,11 @@ def select_best_pipeline():
     asr = best_row['asr']
     
     classifier_paths = {
-        "gguf": "models/gguf_classifier/classifier_q8_0.gguf",
-        "gguf_pruned": "models/gguf_classifier_pruned/classifier_q8_0.gguf",
+        "gguf_q8": "models/gguf_classifier/classifier_q8_0.gguf",
+        "gguf_q4": "models/gguf_classifier/classifier_q4_k_m.gguf",
     }
     whisper_paths = {
         "fp16": "openai/whisper-tiny.en",
-        "bf16": "models/ggml_whisper/whisper_bf16.bin",
         "q8_0": "models/ggml_whisper/whisper_q8_0.bin",
         "q4_k": "models/ggml_whisper/whisper_q4_k.bin",
     }

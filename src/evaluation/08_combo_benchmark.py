@@ -1,7 +1,6 @@
 import os
 import time
 import json
-import itertools
 import sys
 from pathlib import Path
 
@@ -50,22 +49,23 @@ def evaluate_combinations():
     assert len(files) == len(manifest), "CRITICAL ERROR: Downloaded .wav files do not match expected manifest count."
         
     classifier_paths = {
-        "gguf": "models/gguf_classifier/classifier_q8_0.gguf",
-        "gguf_pruned": "models/gguf_classifier_pruned/classifier_q8_0.gguf",
+        "gguf_q8": "models/gguf_classifier/classifier_q8_0.gguf",
+        "gguf_q4": "models/gguf_classifier/classifier_q4_k_m.gguf",
     }
     whisper_paths = {
         "fp16": "openai/whisper-tiny.en",
-        "bf16": "models/ggml_whisper/whisper_bf16.bin",
         "q8_0": "models/ggml_whisper/whisper_q8_0.bin",
         "q4_k": "models/ggml_whisper/whisper_q4_k.bin",
     }
 
-    # Define the variants available
-    classifier_variants = ["fp16", "gguf", "gguf_pruned"]
-    whisper_variants = ["fp16", "bf16", "q8_0", "q4_k"]
-    
-    # Generate all combinations
-    combinations = list(itertools.product(classifier_variants, whisper_variants))
+    # Keep the CPU deployment matrix intentionally small:
+    # baseline, likely production candidate, ASR-small candidate, smallest/mobile candidate.
+    combinations = [
+        ("fp16", "fp16"),
+        ("gguf_q8", "q8_0"),
+        ("gguf_q8", "q4_k"),
+        ("gguf_q4", "q4_k"),
+    ]
     
     load_dotenv()
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
@@ -86,7 +86,7 @@ def evaluate_combinations():
         run_name = f"combo_{clf}_{asr}"
         config = base_config.copy()
         
-        config["classifier_backend"] = "gguf" if "gguf" in clf else "fp16"
+        config["classifier_backend"] = "gguf" if clf.startswith("gguf") else "fp16"
         config["asr_backend"] = "fp16" if asr == "fp16" else "gguf"
         
         if clf in classifier_paths:

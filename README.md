@@ -29,7 +29,7 @@ Data partition diagram: [docs/data_partition_flow.md](docs/data_partition_flow.m
 - **Transcript Retraining**: ModernBERT fine-tuned exclusively on ASR spoken transcripts.
 
 ### 3. Optimization (`src/optimization/`)
-Converts the final PyTorch ModernBERT model into highly optimized **GGUF** weight-only quantized formats (FP16, Q8_0, Q4_K_M) via `llama.cpp` and fetches corresponding Whisper variants for local edge deployment. It also includes an optional calibrated ONNX Runtime static INT8 PTQ path that uses `data/processed/ptq_calibration.csv` for calibration and the frozen `global_test.csv` for post-quantization evaluation.
+Converts the final PyTorch ModernBERT model into the CPU-serving essentials: **FP16 baseline**, **GGUF Q8_0**, and **GGUF Q4_K_M** via `llama.cpp`, with matching Whisper `F16`, `Q8_0`, and `Q4_K` variants for local edge deployment. It also includes an optional calibrated ONNX Runtime static INT8 PTQ path that uses `data/processed/ptq_calibration.csv` for calibration and the frozen `global_test.csv` for post-quantization evaluation.
 
 ### 4. Evaluation & Benchmarking (`src/evaluation/`)
 Runs all models and optimized E2E pipelines (Whisper + Classifier) against the Global Hold-Out Set, logging inference latency, model sizing, and confusion matrices directly to isolated DagsHub MLflow experiments.

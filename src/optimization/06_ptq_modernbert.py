@@ -1,7 +1,7 @@
 """
 Exports the ASR (Whisper) and Classifier models to GGUF/GGML format 
 for ultra-efficient edge and mobile NPU execution via llama.cpp/whisper.cpp.
-Quantizes them to F16, Q8_0, and Q4_K_M.
+Quantizes them to the CPU-serving essentials: F16 baseline, Q8_0, and Q4_K_M/Q4_K.
 
 Also provides an optional calibrated ONNX Runtime static INT8 PTQ path for
 GPU/CPU benchmark evidence using data/processed/ptq_calibration.csv.
@@ -124,16 +124,8 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
     print(f"Quantizing to Q4_K_M...")
     run_cmd([quantize_bin, f16_path, q4_path, "Q4_K_M"])
     
-    # 4. Quantize to BF16
-    bf16_path = os.path.join(output_dir, "classifier_bf16.gguf")
-    print(f"Quantizing to BF16...")
-    try:
-        run_cmd([quantize_bin, f16_path, bf16_path, "BF16"])
-    except Exception as e:
-        print(f"[WARNING] Classifier BF16 quantization failed: {e}")
-
     # Upload all
-    for f in [f16_path, q8_path, q4_path, bf16_path]:
+    for f in [f16_path, q8_path, q4_path]:
         if os.path.exists(f):
             print(f"[SUCCESS] Generated: {f} ({os.path.getsize(f) / (1024*1024):.2f} MB)")
             upload_to_dagshub(f, f"artifacts/{stage}/gguf/{os.path.basename(f)}", stage)
@@ -204,21 +196,13 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     except Exception as e:
         print(f"[WARNING] Whisper quantization failed: {e}")
         
-    # 6. Quantize to BF16
-    bf16_path = os.path.join(output_dir, f"whisper_bf16.bin")
-    print(f"Quantizing {model_name} to BF16...")
-    try:
-        run_cmd([quantize_bin, f16_path, bf16_path, "bf16"])
-    except Exception as e:
-        print(f"[WARNING] Whisper BF16 quantization failed: {e}")
-        
     # Upload F16
     if os.path.exists(f16_path):
         print(f"[SUCCESS] Generated: {f16_path} ({os.path.getsize(f16_path) / (1024*1024):.2f} MB)")
         upload_to_dagshub(f16_path, f"artifacts/{stage}/ggml/{os.path.basename(f16_path)}", stage)
         
     # Upload Quantized
-    for qpath in [q8_path, q4_path, bf16_path]:
+    for qpath in [q8_path, q4_path]:
         if os.path.exists(qpath):
             print(f"[SUCCESS] Generated: {qpath} ({os.path.getsize(qpath) / (1024*1024):.2f} MB)")
             upload_to_dagshub(qpath, f"artifacts/{stage}/ggml/{os.path.basename(qpath)}", stage)
@@ -648,7 +632,7 @@ def run_calibrated_onnx_ptq(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="./scam-classifier-model-transcript")
+    parser.add_argument("--model_name", type=str, default="./scam-classifier-model-transcript-lora")
     parser.add_argument("--whisper_name", type=str, default="openai/whisper-tiny")
     parser.add_argument("--skip_onnx_ptq", action="store_true", help="Skip calibrated ONNX Runtime static INT8 PTQ")
     parser.add_argument("--ptq_calibration_data", type=str, default="data/processed/ptq_calibration.csv")
@@ -663,13 +647,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
     stage = STAGE_NAME
 
-    export_stage_clf = f"{stage}_pruned" if "pruned" in args.model_name else stage
-    export_dir_clf = "models/gguf_classifier_pruned" if "pruned" in args.model_name else "models/gguf_classifier"
-    export_classifier_to_gguf(model_name=args.model_name, output_dir=export_dir_clf, stage=export_stage_clf)
+    export_classifier_to_gguf(
+        model_name=args.model_name,
+        output_dir="models/gguf_classifier",
+        stage=stage,
+    )
     
-    export_stage_wh = f"{stage}_pruned" if "pruned" in args.whisper_name else stage
-    export_dir_wh = "models/ggml_whisper_pruned" if "pruned" in args.whisper_name else "models/ggml_whisper"
-    export_whisper_to_ggml(model_name=args.whisper_name, output_dir=export_dir_wh, stage=export_stage_wh)
+    export_whisper_to_ggml(
+        model_name=args.whisper_name,
+        output_dir="models/ggml_whisper",
+        stage=stage,
+    )
 
     evaluate_ptq_degradation(stage, eval_data=args.gguf_eval_data, eval_rows=args.gguf_eval_rows)
     if not args.skip_onnx_ptq:

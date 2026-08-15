@@ -33,7 +33,7 @@ flowchart TD
     L --> N
     M --> N
 
-    O["data/large_audio_test/manifest.csv<br/>separate audio benchmark holdout"] --> P["07 Whisper quant benchmark<br/>F16 / BF16 / Q8_0 / Q4_K"]
+    O["data/large_audio_test/manifest.csv<br/>separate audio benchmark holdout"] --> P["07 Whisper quant benchmark<br/>F16 / Q8_0 / Q4_K"]
     O --> Q["08 E2E combo benchmark<br/>Whisper variant + classifier variant"]
     N --> Q
     P --> Q
