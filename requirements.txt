@@ -9,3 +9,11 @@ python-dotenv==1.0.1
 llama-cpp-python==0.2.85
 fastapi==0.111.1
 uvicorn==0.30.3
+gradio
+sse-starlette
+datasets
+safetensors
+huggingface_hub
+joblib
+pywhispercpp
+python-multipart

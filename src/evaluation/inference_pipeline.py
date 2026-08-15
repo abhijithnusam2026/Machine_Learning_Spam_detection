@@ -85,8 +85,7 @@ class InferencePipeline:
             print(f"Loading GGUF Classification Head: {head_path}")
             self.gguf_head = joblib.load(head_path)
         else:
-            print("WARNING: GGUF Classification Head not found. Will output simulated predictions.")
-            self.gguf_head = None
+            raise RuntimeError("CRITICAL ERROR: GGUF Classification Head not found. Cannot evaluate GGUF accuracy without the classification head.")
 
     def _init_gguf_asr(self):
         import subprocess
@@ -249,12 +248,9 @@ class InferencePipeline:
                 embeds = arr                      # (hidden,)
                 
             
-            if hasattr(self, 'gguf_head') and self.gguf_head is not None:
-                # Scikit-learn expects 2D array: (n_samples, n_features)
-                pred_idx = self.gguf_head.predict([embeds])[0]
-                return 1 if pred_idx == 1 else 0
-            else:
-                return 1 # Fallback dummy label
+            # Scikit-learn expects 2D array: (n_samples, n_features)
+            pred_idx = self.gguf_head.predict([embeds])[0]
+            return 1 if pred_idx == 1 else 0
             
     def process_batch(self, audio_files, batch_size=8):
         metrics = {}

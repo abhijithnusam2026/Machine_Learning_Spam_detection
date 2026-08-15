@@ -9,6 +9,19 @@ import mlflow
 from dotenv import load_dotenv
 from src.evaluation.inference_pipeline import InferencePipeline
 
+def get_dir_size(path):
+    if not os.path.exists(path):
+        return 0
+    if os.path.isfile(path):
+        return os.path.getsize(path)
+    total_size = 0
+    for dirpath, _, filenames in os.walk(path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+    return total_size
+
 def evaluate_combinations():
     print("--- Running E2E Combinatorial Benchmarks ---")
     
@@ -24,8 +37,9 @@ def evaluate_combinations():
     
     manifest_path = os.path.join(audio_dir, "manifest.csv")
     manifest = pd.read_csv(manifest_path) if os.path.exists(manifest_path) else None
-    if manifest is not None:
-        assert len(files) == len(manifest), "CRITICAL ERROR: Downloaded .wav files do not match expected manifest count."
+    
+    assert manifest is not None, f"CRITICAL ERROR: {manifest_path} not found. Audio benchmark cannot proceed."
+    assert len(files) == len(manifest), "CRITICAL ERROR: Downloaded .wav files do not match expected manifest count."
         
     # Define the variants available
     classifier_variants = ["fp16", "gguf", "gguf_pruned"]
@@ -113,8 +127,11 @@ def evaluate_combinations():
         f1 = f1_score(y_true, y_pred)
         avg_lat = sum(latencies) / len(latencies)
         
-        clf_size = os.path.getsize(config.get("classifier_model_path")) if clf != "fp16" else 0
-        asr_size = os.path.getsize(config.get("asr_model_path")) if asr != "fp16" else 0
+        clf_path = config.get("classifier_model_path") if clf != "fp16" else config.get("fp16_classifier_model_name")
+        asr_path = config.get("asr_model_path") if asr != "fp16" else config.get("fp16_asr_model_name")
+        
+        clf_size = get_dir_size(clf_path)
+        asr_size = get_dir_size(asr_path)
         total_size_mb = (clf_size + asr_size) / (1024 * 1024)
         
         print(f"Results -> Acc: {acc:.4f}, F1: {f1:.4f}, Latency: {avg_lat:.3f}s, Size: {total_size_mb:.1f}MB")

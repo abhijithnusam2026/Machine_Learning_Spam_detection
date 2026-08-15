@@ -18,12 +18,6 @@ def get_whisper_model_path(variant):
 def evaluate_whisper():
     print("--- Evaluating Whisper Quantization Variants ---")
     
-    try:
-        from pywhispercpp.model import Model
-    except ImportError:
-        print("pywhispercpp not installed. Skipping Whisper eval.")
-        return
-        
     manifest_path = "data/large_audio_test/manifest.csv"
     
     load_dotenv()
@@ -61,6 +55,12 @@ def evaluate_whisper():
     
     if not os.path.exists(manifest_path):
         print(f"Manifest not found at {manifest_path}. Skipping.")
+        return
+        
+    try:
+        from pywhispercpp.model import Model
+    except ImportError:
+        print("pywhispercpp not installed. Skipping Whisper eval.")
         return
         
     df = pd.read_csv(manifest_path)

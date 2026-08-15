@@ -3,7 +3,5 @@
     "asr_model_path": "artifacts/feature/phase-2-audio-asr/ggml/whisper_q8_0.bin",
     "classifier_model_path": "artifacts/feature/phase-2-audio-asr/gguf/classifier_q8_0.gguf",
     "fp16_asr_model_name": "openai/whisper-tiny.en",
-    "fp16_classifier_model_name": "models:/ModernBERT-Scam-Classifier-feature-phase-2-audio-asr/latest",
-    "gguf_classifier_model_path": "models/gguf_classifier_pruned/classifier_q8_0.gguf",
-    "ggml_whisper_model_path": "models/ggml_whisper_pruned/whisper_q8_0.bin"
+    "fp16_classifier_model_name": "models:/ModernBERT-Scam-Classifier-feature-phase-2-audio-asr/latest"
 }
