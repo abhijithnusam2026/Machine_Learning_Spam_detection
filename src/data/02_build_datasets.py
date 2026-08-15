@@ -5,6 +5,9 @@ import re
 import glob
 import zipfile
 import pandas as pd
+import mlflow
+import dagshub
+from dotenv import load_dotenv
 
 SEED = 42
 random.seed(SEED)
@@ -21,7 +24,7 @@ def main():
     
     # 1. Load Synthesized JSON data (LLM Data)
     print("Loading synthesized JSON data...")
-    json_dir = "data/raw_jsons"
+    json_dir = "data/raw/jsons"
     json_files = ["scam_call_hard_examples_250.json", "scam_call_transcripts_250_combined.json"]
     synth_data = []
     for fname in json_files:
@@ -36,12 +39,12 @@ def main():
     
     # 2. Extract and Load Teeconnie dataset
     print("Processing teeconnie dataset...")
-    teeconnie_zip = "data/raw_teeconnie/teeconnie_dataset.zip"
+    teeconnie_zip = "data/raw/teeconnie/teeconnie_dataset.zip"
     if os.path.exists(teeconnie_zip):
         with zipfile.ZipFile(teeconnie_zip, 'r') as zipf:
-            zipf.extractall("data/raw_teeconnie/")
+            zipf.extractall("data/raw/teeconnie/")
     
-    teeconnie_files = glob.glob("data/raw_teeconnie/**/*", recursive=True)
+    teeconnie_files = glob.glob("data/raw/teeconnie/**/*", recursive=True)
     nonscam_txt = [f for f in teeconnie_files if f.lower().endswith(".txt") and "non" in f.lower() and "scam" in f.lower()]
     
     entries = []
@@ -58,8 +61,8 @@ def main():
     
     # 3. Load Legacy Kaggle Composite (Phishing, SMS, Enron)
     print("Processing Legacy Kaggle composite...")
-    csv1 = "data/legacy_composite/composite_train.csv"
-    csv2 = "data/legacy_composite/composite_test.csv"
+    csv1 = "data/raw/legacy_composite/composite_train.csv"
+    csv2 = "data/raw/legacy_composite/composite_test.csv"
     df_legacy1 = pd.read_csv(csv1) if os.path.exists(csv1) else pd.DataFrame()
     df_legacy2 = pd.read_csv(csv2) if os.path.exists(csv2) else pd.DataFrame()
     df_legacy = pd.concat([df_legacy1, df_legacy2], ignore_index=True)
@@ -68,7 +71,7 @@ def main():
     
     # 4. Load Raw ASR Transcripts
     print("Processing Raw ASR Transcripts...")
-    asr_path = "data/raw_asr/raw_asr_transcripts.csv"
+    asr_path = "data/raw/asr/raw_asr_transcripts.csv"
     df_asr = pd.read_csv(asr_path) if os.path.exists(asr_path) else pd.DataFrame()
     df_asr["source_domain"] = "spoken_asr"
     df_asr["source_dataset"] = "asr_transcripts"
@@ -107,6 +110,19 @@ def main():
     print(f"Global Test Set:  {len(global_test)} rows (Frozen for final evaluation)")
     
     print("\nDataset building complete. Data ready for modeling in data/processed/.")
+
+    # 6. Log processed datasets to MLflow
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    if repo_owner and repo_name:
+        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
+        mlflow.set_experiment("scam-detection/refactored_pipeline/02_build_datasets")
+        with mlflow.start_run(run_name="build_processed_datasets"):
+            mlflow.log_artifact("data/processed/global_train.csv", artifact_path="processed")
+            mlflow.log_artifact("data/processed/global_val.csv", artifact_path="processed")
+            mlflow.log_artifact("data/processed/global_test.csv", artifact_path="processed")
+            print("\nSuccessfully logged processed datasets to DagsHub MLflow.")
 
 if __name__ == "__main__":
     main()

@@ -231,6 +231,58 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
             print(f"[SUCCESS] Generated: {qpath} ({os.path.getsize(qpath) / (1024*1024):.2f} MB)")
             upload_to_dagshub(qpath, f"artifacts/{stage}/ggml/{os.path.basename(qpath)}", stage)
 
+
+import pandas as pd
+import time
+import mlflow
+import dagshub
+
+def evaluate_ptq_degradation(stage):
+    print("\n--- Evaluating PTQ Degradation ---")
+    
+    try:
+        from llama_cpp import Llama
+    except ImportError:
+        print("llama-cpp-python not installed. Skipping PTQ eval.")
+        return
+        
+    df = pd.read_csv("data/processed/global_train.csv").sample(50, random_state=42)
+    
+    models = {
+        "F16": f"models/gguf_classifier/classifier_f16.gguf",
+        "Q8_0": f"models/gguf_classifier/classifier_q8_0.gguf",
+        "Q4_K_M": f"models/gguf_classifier/classifier_q4_k_m.gguf",
+    }
+    
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    if repo_owner and repo_name:
+        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
+        mlflow.set_experiment("scam-detection/refactored_pipeline/06_ptq_modernbert")
+        
+    for name, path in models.items():
+        if not os.path.exists(path):
+            continue
+            
+        print(f"Evaluating {name}...")
+        llm = Llama(model_path=path, verbose=False, embedding=True)
+        
+        start = time.time()
+        for idx, row in df.iterrows():
+            _ = llm.create_embedding(row['text'])
+        end = time.time()
+        
+        latency = (end - start) / len(df)
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        print(f"{name}: {latency:.3f} s/req, {size_mb:.2f} MB")
+        
+        if repo_owner and repo_name:
+            with mlflow.start_run(run_name=f"ptq_{name}"):
+                mlflow.log_metric("latency_sec", latency)
+                mlflow.log_metric("size_mb", size_mb)
+                mlflow.log_artifact(path, artifact_path="models")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="./scam-classifier-model-transcript")
@@ -246,3 +298,5 @@ if __name__ == "__main__":
     export_stage_wh = f"{stage}_pruned" if "pruned" in args.whisper_name else stage
     export_dir_wh = "models/ggml_whisper_pruned" if "pruned" in args.whisper_name else "models/ggml_whisper"
     export_whisper_to_ggml(model_name=args.whisper_name, output_dir=export_dir_wh, stage=export_stage_wh)
+
+    evaluate_ptq_degradation(stage)

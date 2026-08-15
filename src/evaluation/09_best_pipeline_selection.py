@@ -1,0 +1,82 @@
+import os
+import json
+import pandas as pd
+
+def select_best_pipeline():
+    print("--- Selecting Best Pipeline Configuration ---")
+    
+    results_path = "combo_benchmark_results.csv"
+    if not os.path.exists(results_path):
+        print(f"Results file {results_path} not found. Ensure 08_combo_benchmark.py ran successfully.")
+        return
+        
+    df = pd.read_csv(results_path)
+    
+    if df.empty:
+        print("Results file is empty.")
+        return
+        
+    # User-approved scoring rule
+    # score = 100 * accuracy - 1.0 * latency - 0.01 * size
+    w_acc = 100.0
+    w_lat = 1.0
+    w_size = 0.01
+    
+    df['score'] = (w_acc * df['accuracy']) - (w_lat * df['latency']) - (w_size * df['size_mb'])
+    
+    best_row = df.loc[df['score'].idxmax()]
+    print("\\n=== BEST COMBINATION FOUND ===")
+    print(f"Classifier: {best_row['classifier']}")
+    print(f"ASR: {best_row['asr']}")
+    print(f"Accuracy: {best_row['accuracy']:.4f}")
+    print(f"Latency: {best_row['latency']:.3f} s")
+    print(f"Size: {best_row['size_mb']:.1f} MB")
+    print(f"Score: {best_row['score']:.4f}")
+    print("==============================\\n")
+    
+    # Write to config
+    config_path = "configs/inference_config.json"
+    with open(config_path, "r") as f:
+        config = json.load(f)
+        
+    clf = best_row['classifier']
+    asr = best_row['asr']
+    
+    if clf == "gguf":
+        config["backend"] = "gguf"
+        config["classifier_model_path"] = "models/gguf_classifier/classifier_q8_0.gguf"
+    elif clf == "gguf_pruned":
+        config["backend"] = "gguf"
+        config["classifier_model_path"] = "models/gguf_classifier_pruned/classifier_q8_0.gguf"
+    else:
+        config["backend"] = "fp16"
+        config["fp16_classifier_model_name"] = "./scam-classifier-model-transcript"
+        
+    if asr == "fp16":
+        config["asr_model_path"] = "models/ggml_whisper/whisper_f16.bin"
+    elif asr == "bf16":
+        config["asr_model_path"] = "models/ggml_whisper/whisper_bf16.bin"
+    elif asr == "q8_0":
+        config["asr_model_path"] = "models/ggml_whisper/whisper_q8_0.bin"
+    else:
+        config["asr_model_path"] = "models/ggml_whisper/whisper_q4_k.bin"
+        
+    # Clean up old/unused keys
+    if "gguf_classifier_model_path" in config:
+        del config["gguf_classifier_model_path"]
+    if "ggml_whisper_model_path" in config:
+        del config["ggml_whisper_model_path"]
+        
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=4)
+        
+    print(f"Successfully wrote winning configuration to {config_path}")
+    
+    # Write a dedicated backup for reference
+    best_config_path = "configs/best_inference_config.json"
+    with open(best_config_path, "w") as f:
+        json.dump(config, f, indent=4)
+    print(f"Saved a backup to {best_config_path}")
+
+if __name__ == "__main__":
+    select_best_pipeline()
