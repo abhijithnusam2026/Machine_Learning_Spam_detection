@@ -124,13 +124,35 @@ def ensure_audio_holdout(local_audio_dir="data/large_audio_test"):
     local_audio_dir.mkdir(parents=True, exist_ok=True)
 
     print("Fetching audio benchmark holdout from DagsHub...")
-    s3_client.download_file(repo_name, "data/large_audio_test/manifest.csv", str(manifest_path))
+    remote_prefixes = [
+        "data/large_audio_test",
+        "artifacts/feature/phase-3.5-benchmark/large_audio_test",
+    ]
+    manifest_key = None
+    last_error = None
+    for prefix in remote_prefixes:
+        candidate_key = f"{prefix}/manifest.csv"
+        try:
+            s3_client.download_file(repo_name, candidate_key, str(manifest_path))
+            manifest_key = candidate_key
+            break
+        except Exception as exc:
+            last_error = exc
+
+    if manifest_key is None:
+        raise FileNotFoundError(
+            "Audio benchmark manifest was not found in DagsHub at any known path. "
+            f"Tried: {[f'{prefix}/manifest.csv' for prefix in remote_prefixes]}. "
+            f"Last error: {last_error}"
+        )
+
+    remote_prefix = manifest_key.rsplit("/", 1)[0]
     manifest_df = pd.read_csv(manifest_path)
 
     failed_downloads = []
     for _, row in manifest_df.iterrows():
         audio_filename = os.path.basename(row["file"])
-        remote_audio_path = f"data/large_audio_test/{audio_filename}"
+        remote_audio_path = f"{remote_prefix}/{audio_filename}"
         local_audio_path = local_audio_dir / audio_filename
         if local_audio_path.exists():
             continue
