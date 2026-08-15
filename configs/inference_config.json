@@ -1,5 +1,6 @@
 {
-    "backend": "fp16",
+    "classifier_backend": "fp16",
+    "asr_backend": "fp16",
     "asr_model_path": "artifacts/feature/phase-2-audio-asr/ggml/whisper_q8_0.bin",
     "classifier_model_path": "artifacts/feature/phase-2-audio-asr/gguf/classifier_q8_0.gguf",
     "fp16_asr_model_name": "openai/whisper-tiny.en",
