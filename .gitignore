@@ -25,19 +25,20 @@ env/
 .ipynb_checkpoints/
 
 # ML data and artifacts
-data/*
-!data/.gitkeep
-checkpoints/
-artifacts/
-models/
-scam-classifier-model/
-outputs/
-runs/
-wandb/
-mlruns/
-lightning_logs/
-pruned_classifier/
-pruned_whisper/
+/data/**
+!/data/
+!/data/.gitkeep
+/artifacts/
+/checkpoints/
+/models/
+/*model*/
+/outputs/
+/runs/
+/wandb/
+/mlruns/
+/lightning_logs/
+/pruned_classifier/
+/pruned_whisper/
 
 # Model files
 *.bin
@@ -64,5 +65,4 @@ tensorboard/
 
 # Docker/Kubernetes local state
 .docker/
-kubeconfig*pruned_classifier/
-pruned_whisper/
+kubeconfig*
