@@ -86,10 +86,83 @@ def ensure_gguf_classifier_head(local_path="models/gguf/gguf_classifier_head.job
         if download_from_dagshub(remote_path, local_path):
             return local_path
 
-    raise RuntimeError(
-        "GGUF classification head is required for PTQ evaluation. "
-        f"Expected local path {local_path}; tried DagsHub keys: {remote_candidates}."
+    return None
+
+def mean_pool_llama_embedding(raw_embedding):
+    import numpy as np
+
+    arr = np.array(raw_embedding)
+    if arr.ndim == 3:
+        return np.mean(arr[0], axis=0)
+    if arr.ndim == 2:
+        return np.mean(arr, axis=0)
+    return arr
+
+def train_gguf_classifier_head(
+    gguf_model_path,
+    train_data="data/processed/global_train.csv",
+    train_rows=512,
+    output_path="models/gguf/gguf_classifier_head.joblib",
+):
+    print("\n--- Training GGUF Classification Head ---")
+    if not os.path.exists(gguf_model_path):
+        raise FileNotFoundError(f"Cannot train GGUF head; model not found: {gguf_model_path}")
+
+    if not os.path.exists(train_data):
+        ensure_processed_data([train_data])
+
+    train_df = pd.read_csv(train_data).dropna(subset=["text", "label"])
+    if len(train_df) > train_rows:
+        train_df = train_df.groupby("label", group_keys=False).apply(
+            lambda x: x.sample(
+                n=min(len(x), max(1, round(train_rows * len(x) / len(train_df)))),
+                random_state=42,
+            )
+        )
+        if len(train_df) > train_rows:
+            train_df = train_df.sample(n=train_rows, random_state=42)
+
+    from llama_cpp import Llama
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+    import joblib
+
+    llm = Llama(model_path=gguf_model_path, verbose=False, embedding=True)
+    embeddings = []
+    labels = []
+    for _, row in train_df.iterrows():
+        embeddings.append(mean_pool_llama_embedding(llm.embed(str(row["text"])[:5000])))
+        labels.append(int(row["label"]))
+
+    head = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42),
     )
+    head.fit(embeddings, labels)
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(head, output_path)
+    print(f"[SUCCESS] Trained GGUF classifier head: {output_path}")
+    upload_to_dagshub(output_path, f"artifacts/{STAGE_NAME}/gguf/{os.path.basename(output_path)}", STAGE_NAME)
+
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    if repo_owner and repo_name:
+        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
+        mlflow.set_experiment("scam-detection/refactored_pipeline/06_ptq_modernbert")
+        with mlflow.start_run(run_name="gguf_classifier_head_training"):
+            mlflow.set_tag("project_stage", "refactored_pipeline")
+            mlflow.set_tag("pipeline_stage", STAGE_NAME)
+            mlflow.log_param("head_model_type", "standard_scaler_logistic_regression")
+            mlflow.log_param("embedding_model_path", gguf_model_path)
+            mlflow.log_param("head_train_data", train_data)
+            mlflow.log_metric("head_train_rows", len(train_df))
+            mlflow.log_artifact(output_path, artifact_path="models")
+            log_split_profile({"gguf_head_train": train_df}, artifact_path="head_training_data")
+
+    return output_path
 
 def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="models/gguf_classifier", stage=STAGE_NAME):
     print(f"\n--- Exporting Classifier ({model_name}) to GGUF ---")
@@ -280,7 +353,13 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
             print(f"[SUCCESS] Generated: {qpath} ({os.path.getsize(qpath) / (1024*1024):.2f} MB)")
             upload_to_dagshub(qpath, f"artifacts/{stage}/ggml/{os.path.basename(qpath)}", stage)
 
-def evaluate_ptq_degradation(stage, eval_data="data/processed/global_test.csv", eval_rows=512):
+def evaluate_ptq_degradation(
+    stage,
+    eval_data="data/processed/global_test.csv",
+    eval_rows=512,
+    head_train_data="data/processed/global_train.csv",
+    head_train_rows=512,
+):
     print("\n--- Evaluating PTQ Degradation ---")
     
     try:
@@ -318,6 +397,12 @@ def evaluate_ptq_degradation(stage, eval_data="data/processed/global_test.csv", 
         mlflow.set_experiment("scam-detection/refactored_pipeline/06_ptq_modernbert")
         
     head_path = ensure_gguf_classifier_head()
+    if head_path is None:
+        head_path = train_gguf_classifier_head(
+            gguf_model_path=models["F16"],
+            train_data=head_train_data,
+            train_rows=head_train_rows,
+        )
 
     import joblib
     gguf_head = joblib.load(head_path)
@@ -339,13 +424,7 @@ def evaluate_ptq_degradation(stage, eval_data="data/processed/global_test.csv", 
             y_true.append(row['label'])
             
             raw_emb = llm.embed(row['text'][:5000])
-            arr = np.array(raw_emb)
-            if arr.ndim == 3:
-                embeds = np.mean(arr[0], axis=0)
-            elif arr.ndim == 2:
-                embeds = np.mean(arr, axis=0)
-            else:
-                embeds = arr
+            embeds = mean_pool_llama_embedding(raw_emb)
                 
             pred_idx = gguf_head.predict([embeds])[0]
             y_pred.append(pred_idx)
@@ -706,6 +785,8 @@ if __name__ == "__main__":
     parser.add_argument("--ptq_calibration_data", type=str, default="data/processed/ptq_calibration.csv")
     parser.add_argument("--gguf_eval_data", type=str, default="data/processed/global_test.csv")
     parser.add_argument("--gguf_eval_rows", type=int, default=512)
+    parser.add_argument("--gguf_head_train_data", type=str, default="data/processed/global_train.csv")
+    parser.add_argument("--gguf_head_train_rows", type=int, default=512)
     parser.add_argument("--onnx_eval_data", type=str, default="data/processed/global_test.csv")
     parser.add_argument("--onnx_output_dir", type=str, default="models/onnx_modernbert")
     parser.add_argument("--onnx_max_length", type=int, default=512)
@@ -727,7 +808,13 @@ if __name__ == "__main__":
         stage=stage,
     )
 
-    evaluate_ptq_degradation(stage, eval_data=args.gguf_eval_data, eval_rows=args.gguf_eval_rows)
+    evaluate_ptq_degradation(
+        stage,
+        eval_data=args.gguf_eval_data,
+        eval_rows=args.gguf_eval_rows,
+        head_train_data=args.gguf_head_train_data,
+        head_train_rows=args.gguf_head_train_rows,
+    )
     if not args.skip_onnx_ptq:
         run_calibrated_onnx_ptq(
             model_name=args.model_name,
