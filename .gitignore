@@ -23,6 +23,7 @@ env/
 
 # Jupyter
 .ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
 
 # ML data and artifacts
 /data/**
@@ -31,6 +32,7 @@ env/
 /artifacts/
 /checkpoints/
 /models/
+/whisper.cpp/
 /*model*/
 /outputs/
 /runs/
