@@ -22,8 +22,8 @@ The entire codebase has been refactored into a clean, modular structure under th
 Downloads raw sources (Kaggle Phishing/Enron/SMS datasets, Teeconnie data, synthetic LLM JSONs, and raw ASR transcripts). A 20% **Global Hold-Out Set** is deterministically carved out and frozen *before* any modeling occurs, guaranteeing zero leakage.
 
 ### 2. Model Training (`src/models/`)
-- **Baseline**: DistilBERT on written text.
-- **Universal**: ModernBERT on written text.
+- **Baseline**: DistilBERT trained on the initial Phase 1 written text data (explicitly excluding Phase 1.5 synthetic LLM data).
+- **Universal**: ModernBERT trained on the expanded written corpus (including the synthetic LLM data).
 - **Transcript Retraining**: ModernBERT fine-tuned exclusively on ASR spoken transcripts.
 
 ### 3. Optimization (`src/optimization/`)

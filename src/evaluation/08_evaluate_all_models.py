@@ -44,6 +44,9 @@ def run_benchmark(backend_name, audio_dir="data/large_audio_test"):
     manifest_path = os.path.join(audio_dir, "manifest.csv")
     manifest = pd.read_csv(manifest_path) if os.path.exists(manifest_path) else None
     
+    if manifest is not None:
+        assert len(files) == len(manifest), f"CRITICAL ERROR: Downloaded .wav files ({len(files)}) does not match expected manifest count ({len(manifest)}). Reproducibility failed!"
+    
     results = []
     
     with mlflow.start_run(run_name=f"large_scale_{backend_name}"):

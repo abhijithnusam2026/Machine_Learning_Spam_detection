@@ -97,6 +97,7 @@ def main():
         "--model_name",
         type=str,
         default="./scam-classifier-model-universal",
+        help="Path to local model directory OR an MLflow artifact URI (e.g. models:/ModernBERT-base-Scam-Classifier/latest)"
     )
     parser.add_argument("--output_dir", type=str, default="./scam-classifier-model-transcript")
     parser.add_argument("--epochs", type=int, default=4)
