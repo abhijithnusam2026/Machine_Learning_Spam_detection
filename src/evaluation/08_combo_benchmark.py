@@ -8,6 +8,7 @@ import dagshub
 import mlflow
 from dotenv import load_dotenv
 from src.evaluation.inference_pipeline import InferencePipeline
+from src.utils.mlflow_reporting import log_benchmark_plots, log_classification_artifacts, log_dataframe_artifact
 
 def get_dir_size(path):
     if not os.path.exists(path):
@@ -73,13 +74,10 @@ def evaluate_combinations():
         config["asr_backend"] = "fp16" if asr == "fp16" else "gguf"
         
         if clf == "gguf":
-            config["backend"] = "gguf"
             config["classifier_model_path"] = "models/gguf_classifier/classifier_q8_0.gguf"
         elif clf == "gguf_pruned":
-            config["backend"] = "gguf"
             config["classifier_model_path"] = "models/gguf_classifier_pruned/classifier_q8_0.gguf"
         else:
-            config["backend"] = "fp16"
             config["fp16_classifier_model_name"] = "./scam-classifier-model-transcript"
             
         if asr == "fp16":
@@ -108,6 +106,7 @@ def evaluate_combinations():
         y_true = []
         y_pred = []
         latencies = []
+        prediction_rows = []
         
         for idx, row in manifest.iterrows():
             audio_path = os.path.join(audio_dir, os.path.basename(row['file']))
@@ -119,12 +118,35 @@ def evaluate_combinations():
             try:
                 res = pipeline.process_audio(audio_file=audio_path)
                 y_pred.append(res['prediction'])
+                prediction_rows.append(
+                    {
+                        "file": os.path.basename(audio_path),
+                        "label": row["label"],
+                        "prediction": res["prediction"],
+                        "asr_latency_sec": res["metrics"].get("asr_latency"),
+                        "classifier_latency_sec": res["metrics"].get("classifier_latency"),
+                        "total_latency_sec": res["metrics"].get("total_latency"),
+                        "transcript": res.get("transcript", ""),
+                    }
+                )
             except Exception as e:
                 print(f"Failed prediction on {audio_path}: {e}")
                 y_pred.append(0)
+                prediction_rows.append(
+                    {
+                        "file": os.path.basename(audio_path),
+                        "label": row["label"],
+                        "prediction": 0,
+                        "error": str(e),
+                    }
+                )
             end_time = time.time()
             latencies.append(end_time - start_time)
-            
+
+        if not y_true:
+            print(f"No valid rows evaluated for {clf}+{asr}. Skipping combo.")
+            continue
+
         acc = accuracy_score(y_true, y_pred)
         f1 = f1_score(y_true, y_pred)
         avg_lat = sum(latencies) / len(latencies)
@@ -150,14 +172,35 @@ def evaluate_combinations():
         
         if repo_owner and repo_name:
             with mlflow.start_run(run_name=run_name):
+                mlflow.set_tag("project_stage", "refactored_pipeline")
+                mlflow.set_tag("pipeline_stage", "08_combo_benchmark")
+                mlflow.log_param("classifier_variant", clf)
+                mlflow.log_param("asr_variant", asr)
+                mlflow.log_param("classifier_backend", config["classifier_backend"])
+                mlflow.log_param("asr_backend", config["asr_backend"])
+                mlflow.log_param("classifier_path_or_model", clf_path)
+                mlflow.log_param("asr_path_or_model", asr_path)
+                mlflow.log_metric("evaluated_rows", len(y_true))
                 mlflow.log_metric("accuracy", acc)
                 mlflow.log_metric("f1_score", f1)
                 mlflow.log_metric("latency_sec", avg_lat)
                 mlflow.log_metric("size_mb", total_size_mb)
+                mlflow.log_artifact(manifest_path, artifact_path="dataset")
+                log_dataframe_artifact(pd.DataFrame(prediction_rows), f"{run_name}_predictions.csv", "predictions")
+                log_classification_artifacts(y_true, y_pred, artifact_path="evaluation", prefix=run_name)
                 
     # Save combo benchmark results
     df_res = pd.DataFrame(results)
     df_res.to_csv("combo_benchmark_results.csv", index=False)
+    if repo_owner and repo_name and not df_res.empty:
+        with mlflow.start_run(run_name="combo_benchmark_summary"):
+            mlflow.set_tag("project_stage", "refactored_pipeline")
+            mlflow.set_tag("pipeline_stage", "08_combo_benchmark")
+            mlflow.log_metric("num_combinations_evaluated", len(df_res))
+            log_dataframe_artifact(df_res, "combo_benchmark_results.csv", "benchmarks")
+            plot_df = df_res.copy()
+            plot_df["combination"] = plot_df["classifier"].astype(str) + "+" + plot_df["asr"].astype(str)
+            log_benchmark_plots(plot_df, "combination", ["accuracy", "f1", "latency", "size_mb"], "benchmarks", "combo")
     print("Combinatorial benchmarking complete. Results saved to combo_benchmark_results.csv")
 
 if __name__ == "__main__":

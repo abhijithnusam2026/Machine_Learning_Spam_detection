@@ -24,6 +24,7 @@ PIPELINE_STAGE = "04_universal_modernbert"
 
 from datasets import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, average_precision_score, confusion_matrix
+from src.utils.mlflow_reporting import log_classification_artifacts, log_split_profile, log_training_history
 from transformers import (
     AutoTokenizer,
     AutoModelForSequenceClassification,
@@ -215,11 +216,29 @@ def main():
         mlflow.log_artifact(args.test_data, "dataset")
         mlflow.set_tag("project_stage", "refactored_pipeline")
         mlflow.set_tag("pipeline_stage", PIPELINE_STAGE)
+        mlflow.log_params(
+            {
+                "pipeline_stage": PIPELINE_STAGE,
+                "model_name": args.model_name,
+                "train_data": args.train_data,
+                "eval_data": args.test_data,
+                "training_filter": "source_domain == written_text",
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "learning_rate": args.lr,
+                "seed": seed,
+                "physical_batch_size": physical_batch_size,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "max_length": max_len,
+            }
+        )
+        log_split_profile({"train": train_df, "validation": test_df}, artifact_path="dataset_profile")
         trainer.train()
 
         # 6. Evaluate
         metrics = trainer.evaluate()
         print("Final evaluation metrics on test set:", metrics)
+        mlflow.log_metrics({f"final_{k}": float(v) for k, v in metrics.items() if isinstance(v, (int, float, np.floating))})
     
         # Generate Confusion Matrix
         print("\n--- Detailed Evaluation ---")
@@ -229,6 +248,7 @@ def main():
         cm = confusion_matrix(y_true, preds)
         print("Confusion Matrix:")
         print(cm)
+        log_classification_artifacts(y_true, preds, artifact_path="evaluation", prefix=PIPELINE_STAGE)
         
         print("\n--- Stratified Context-Length Evaluation ---")
         # Calculate true token lengths
@@ -241,10 +261,14 @@ def main():
         
         if short_mask.sum() > 0:
             acc_short = accuracy_score(y_true[short_mask], preds[short_mask])
+            mlflow.log_metric("accuracy_short_context", acc_short)
+            mlflow.log_metric("short_context_rows", int(short_mask.sum()))
             print(f"{args.model_name} accuracy, short transcripts (≤ {max_len} tokens): {acc_short:.2%} (N={short_mask.sum()})")
         
         if long_mask.sum() > 0:
             acc_long = accuracy_score(y_true[long_mask], preds[long_mask])
+            mlflow.log_metric("accuracy_long_context", acc_long)
+            mlflow.log_metric("long_context_rows", int(long_mask.sum()))
             print(f"{args.model_name} accuracy, long transcripts (> {max_len} tokens): {acc_long:.2%} (N={long_mask.sum()})")
 
 
@@ -270,6 +294,7 @@ def main():
             registered_model_name=registry_name,
             task="text-classification"
         )
+        log_training_history(trainer.state.log_history, artifact_path="training", prefix=PIPELINE_STAGE)
         print(f"Model successfully registered to DagsHub Model Registry as '{registry_name}'!")
 
     if push_to_hub:

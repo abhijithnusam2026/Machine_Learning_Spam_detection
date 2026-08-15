@@ -8,6 +8,7 @@ import pandas as pd
 import mlflow
 import dagshub
 from dotenv import load_dotenv
+from src.utils.mlflow_reporting import log_dataframe_artifact, log_split_profile
 
 SEED = 42
 random.seed(SEED)
@@ -119,6 +120,30 @@ def main():
         dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
         mlflow.set_experiment("scam-detection/refactored_pipeline/02_build_datasets")
         with mlflow.start_run(run_name="build_processed_datasets"):
+            mlflow.set_tag("project_stage", "refactored_pipeline")
+            mlflow.set_tag("pipeline_stage", "02_build_datasets")
+            mlflow.log_param("seed", SEED)
+            mlflow.log_param("split_strategy", "20% frozen global holdout, then 20% validation from remaining data")
+            mlflow.log_param("deduplication_key", "cleaned_text")
+            mlflow.log_param("stratification_columns", "label,source_domain")
+
+            log_split_profile(
+                {
+                    "global_train": global_train,
+                    "global_val": global_val,
+                    "global_test": global_test,
+                },
+                artifact_path="dataset_profile",
+            )
+
+            source_summary = (
+                all_data.groupby(["source_domain", "source_dataset", "label"])
+                .size()
+                .reset_index(name="rows")
+                .sort_values(["source_domain", "source_dataset", "label"])
+            )
+            log_dataframe_artifact(source_summary, "canonical_source_summary.csv", "dataset_profile")
+
             mlflow.log_artifact("data/processed/global_train.csv", artifact_path="processed")
             mlflow.log_artifact("data/processed/global_val.csv", artifact_path="processed")
             mlflow.log_artifact("data/processed/global_test.csv", artifact_path="processed")

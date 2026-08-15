@@ -208,6 +208,7 @@ import pandas as pd
 import time
 import mlflow
 import dagshub
+from src.utils.mlflow_reporting import log_benchmark_plots, log_classification_artifacts, log_dataframe_artifact, log_split_profile
 
 def evaluate_ptq_degradation(stage):
     print("\n--- Evaluating PTQ Degradation ---")
@@ -233,6 +234,17 @@ def evaluate_ptq_degradation(stage):
         dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
         mlflow.set_experiment("scam-detection/refactored_pipeline/06_ptq_modernbert")
         
+    head_path = "models/gguf/gguf_classifier_head.joblib"
+    if not os.path.exists(head_path):
+        raise RuntimeError(
+            "GGUF classification head is required for PTQ evaluation. "
+            f"Expected {head_path}."
+        )
+
+    import joblib
+    gguf_head = joblib.load(head_path)
+    results = []
+
     for name, path in models.items():
         if not os.path.exists(path):
             continue
@@ -244,13 +256,6 @@ def evaluate_ptq_degradation(stage):
         y_true = []
         y_pred = []
         
-        # Load the custom trained Scikit-Learn classification head
-        import joblib
-        head_path = "models/gguf/gguf_classifier_head.joblib"
-        gguf_head = None
-        if os.path.exists(head_path):
-            gguf_head = joblib.load(head_path)
-            
         import numpy as np
         for idx, row in df.iterrows():
             y_true.append(row['label'])
@@ -264,11 +269,8 @@ def evaluate_ptq_degradation(stage):
             else:
                 embeds = arr
                 
-            if gguf_head:
-                pred_idx = gguf_head.predict([embeds])[0]
-                y_pred.append(pred_idx)
-            else:
-                y_pred.append(1) # Simulated
+            pred_idx = gguf_head.predict([embeds])[0]
+            y_pred.append(pred_idx)
                 
         end = time.time()
         
@@ -280,14 +282,42 @@ def evaluate_ptq_degradation(stage):
         f1 = f1_score(y_true, y_pred)
         
         print(f"{name}: {latency:.3f} s/req, {size_mb:.2f} MB, Acc: {acc:.4f}, F1: {f1:.4f}")
+        results.append(
+            {
+                "variant": name,
+                "latency_sec": latency,
+                "size_mb": size_mb,
+                "accuracy": acc,
+                "f1_score": f1,
+                "model_path": path,
+                "calibration_rows": len(df),
+            }
+        )
         
         if repo_owner and repo_name:
             with mlflow.start_run(run_name=f"ptq_{name}"):
+                mlflow.set_tag("project_stage", "refactored_pipeline")
+                mlflow.set_tag("pipeline_stage", stage)
+                mlflow.log_param("precision_variant", name)
+                mlflow.log_param("model_path", path)
+                mlflow.log_param("classifier_head_path", head_path)
+                mlflow.log_param("calibration_dataset", "data/processed/global_train.csv")
+                mlflow.log_metric("calibration_rows", len(df))
                 mlflow.log_metric("latency_sec", latency)
                 mlflow.log_metric("size_mb", size_mb)
                 mlflow.log_metric("accuracy", acc)
                 mlflow.log_metric("f1_score", f1)
+                log_split_profile({"ptq_calibration_sample": df}, artifact_path="calibration")
+                log_classification_artifacts(y_true, y_pred, artifact_path="evaluation", prefix=f"ptq_{name.lower()}")
                 mlflow.log_artifact(path, artifact_path="models")
+
+    if repo_owner and repo_name and results:
+        with mlflow.start_run(run_name="ptq_summary"):
+            mlflow.set_tag("project_stage", "refactored_pipeline")
+            mlflow.set_tag("pipeline_stage", stage)
+            results_df = pd.DataFrame(results)
+            log_dataframe_artifact(results_df, "ptq_benchmark_summary.csv", "benchmarks")
+            log_benchmark_plots(results_df, "variant", ["accuracy", "f1_score", "latency_sec", "size_mb"], "benchmarks", "ptq")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

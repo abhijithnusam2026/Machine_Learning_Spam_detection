@@ -1,7 +1,9 @@
 import os
 import dagshub
 import mlflow
+import pandas as pd
 from dotenv import load_dotenv
+from src.utils.mlflow_reporting import log_dataframe_artifact
 
 def download_file(s3_client, repo_name, s3_key, local_path):
     if not os.path.exists(local_path):
@@ -45,11 +47,27 @@ def main():
     mlflow.set_experiment("scam-detection/refactored_pipeline/00_download_raw_data")
     
     with mlflow.start_run(run_name="download_raw_data"):
+        mlflow.set_tag("project_stage", "refactored_pipeline")
+        mlflow.set_tag("pipeline_stage", "00_download_raw_data")
+        mlflow.log_param("source_storage", "DagsHub repo bucket")
+        source_rows = []
         for s3_key, local_path in raw_datasets:
             download_file(s3_client, repo_name, s3_key, local_path)
+            exists = os.path.exists(local_path)
+            size_mb = os.path.getsize(local_path) / (1024 * 1024) if exists else 0.0
+            source_rows.append(
+                {
+                    "s3_key": s3_key,
+                    "local_path": local_path,
+                    "downloaded": exists,
+                    "size_mb": size_mb,
+                }
+            )
             if os.path.exists(local_path):
                 mlflow.log_artifact(local_path, artifact_path=os.path.dirname(local_path).replace("data/", ""))
-                
+        log_dataframe_artifact(pd.DataFrame(source_rows), "raw_source_manifest.csv", "raw_manifest")
+        mlflow.log_metric("raw_sources_expected", len(raw_datasets))
+        mlflow.log_metric("raw_sources_available", sum(1 for row in source_rows if row["downloaded"]))
         print("Download and MLflow logging complete.")
 
 if __name__ == "__main__":

@@ -1,6 +1,10 @@
 import os
 import json
 import pandas as pd
+import dagshub
+import mlflow
+from dotenv import load_dotenv
+from src.utils.mlflow_reporting import log_benchmark_plots, log_dataframe_artifact, log_json_artifact
 
 def select_best_pipeline():
     print("--- Selecting Best Pipeline Configuration ---")
@@ -83,6 +87,31 @@ def select_best_pipeline():
     with open(best_config_path, "w") as f:
         json.dump(config, f, indent=4)
     print(f"Saved a backup to {best_config_path}")
+
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    if repo_owner and repo_name:
+        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
+        mlflow.set_experiment("scam-detection/refactored_pipeline/09_best_pipeline_selection")
+        with mlflow.start_run(run_name="best_pipeline_selection"):
+            mlflow.set_tag("project_stage", "refactored_pipeline")
+            mlflow.set_tag("pipeline_stage", "09_best_pipeline_selection")
+            mlflow.log_param("scoring_rule", "100 * accuracy - latency_sec - 0.01 * size_mb")
+            mlflow.log_param("selected_classifier", best_row["classifier"])
+            mlflow.log_param("selected_asr", best_row["asr"])
+            mlflow.log_metric("selected_accuracy", float(best_row["accuracy"]))
+            mlflow.log_metric("selected_f1_score", float(best_row["f1"]))
+            mlflow.log_metric("selected_latency_sec", float(best_row["latency"]))
+            mlflow.log_metric("selected_size_mb", float(best_row["size_mb"]))
+            mlflow.log_metric("selected_score", float(best_row["score"]))
+            ranked_df = df.sort_values("score", ascending=False)
+            log_dataframe_artifact(ranked_df, "ranked_pipeline_combinations.csv", "selection")
+            plot_df = ranked_df.copy()
+            plot_df["combination"] = plot_df["classifier"].astype(str) + "+" + plot_df["asr"].astype(str)
+            log_benchmark_plots(plot_df, "combination", ["score", "accuracy", "latency", "size_mb"], "selection", "selection")
+            log_json_artifact(config, "best_inference_config.json", "selection")
+            mlflow.log_artifact(results_path, artifact_path="selection")
 
 if __name__ == "__main__":
     select_best_pipeline()
