@@ -32,6 +32,7 @@ def main():
                 
     df_synth = pd.DataFrame(synth_data) if synth_data else pd.DataFrame(columns=["text", "label"])
     df_synth["source_domain"] = "written_text"
+    df_synth["source_dataset"] = "synthetic"
     
     # 2. Extract and Load Teeconnie dataset
     print("Processing teeconnie dataset...")
@@ -53,6 +54,7 @@ def main():
     
     df_teeconnie = pd.DataFrame({"text": entries, "label": [0] * len(entries)})
     df_teeconnie["source_domain"] = "written_text"
+    df_teeconnie["source_dataset"] = "teeconnie"
     
     # 3. Load Legacy Kaggle Composite (Phishing, SMS, Enron)
     print("Processing Legacy Kaggle composite...")
@@ -62,12 +64,14 @@ def main():
     df_legacy2 = pd.read_csv(csv2) if os.path.exists(csv2) else pd.DataFrame()
     df_legacy = pd.concat([df_legacy1, df_legacy2], ignore_index=True)
     df_legacy["source_domain"] = "written_text"
+    df_legacy["source_dataset"] = "kaggle_composite"
     
     # 4. Load Raw ASR Transcripts
     print("Processing Raw ASR Transcripts...")
     asr_path = "data/raw_asr/raw_asr_transcripts.csv"
     df_asr = pd.read_csv(asr_path) if os.path.exists(asr_path) else pd.DataFrame()
     df_asr["source_domain"] = "spoken_asr"
+    df_asr["source_dataset"] = "asr_transcripts"
     
     # Combine ALL sources
     print("\nAssembling massive canonical dataset...")

@@ -16,7 +16,7 @@ if os.path.exists(config_path):
 # Load pipeline (will auto-download models from DagsHub if DagsHub secrets are set in HF Spaces)
 print("Initializing CPU (GGUF) Inference Pipeline...")
 import importlib
-infer_module = importlib.import_module("scripts.10_inference_pipeline")
+infer_module = importlib.import_module("src.evaluation.inference_pipeline")
 InferencePipeline = infer_module.InferencePipeline
 pipeline = InferencePipeline()
 

@@ -98,7 +98,7 @@ def main():
         type=str,
         default="distilbert-base-uncased",
     )
-    parser.add_argument("--output_dir", type=str, default="./scam-classifier-model")
+    parser.add_argument("--output_dir", type=str, default="./scam-classifier-model-baseline")
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-5)
@@ -154,9 +154,9 @@ def main():
     train_df = pd.read_csv(args.train_data)
     test_df = pd.read_csv(args.test_data)
     
-    # Baseline uses ONLY written text data
-    train_df = train_df[train_df["source_domain"] == "written_text"]
-    test_df = test_df[test_df["source_domain"] == "written_text"]
+    # Baseline uses ONLY written text data, and specifically excludes the large Kaggle Composite
+    train_df = train_df[(train_df["source_domain"] == "written_text") & (train_df["source_dataset"] != "kaggle_composite")]
+    test_df = test_df[(test_df["source_domain"] == "written_text") & (test_df["source_dataset"] != "kaggle_composite")]
     
     assert "text" in train_df.columns and "label" in train_df.columns, "Train CSV must have 'text' and 'label' columns"
     assert "text" in test_df.columns and "label" in test_df.columns, "Test CSV must have 'text' and 'label' columns"

@@ -34,7 +34,7 @@ if owner and name and token:
     mlflow.set_tracking_uri(f"https://dagshub.com/{owner}/{name}.mlflow")
 
 import importlib
-infer_module = importlib.import_module("scripts.10_inference_pipeline")
+infer_module = importlib.import_module("src.evaluation.inference_pipeline")
 pipeline = infer_module.InferencePipeline()
 
 app = FastAPI(title="Scam Detection API", description="Live Voice Scam Detection", version="1.0.0")

@@ -233,7 +233,7 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="./scam-classifier-model")
+    parser.add_argument("--model_name", type=str, default="./scam-classifier-model-transcript")
     parser.add_argument("--whisper_name", type=str, default="openai/whisper-tiny")
     args = parser.parse_args()
     branch = detect_branch()

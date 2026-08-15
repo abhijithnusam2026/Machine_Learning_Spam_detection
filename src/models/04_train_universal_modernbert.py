@@ -98,7 +98,7 @@ def main():
         type=str,
         default="answerdotai/ModernBERT-base",
     )
-    parser.add_argument("--output_dir", type=str, default="./scam-classifier-model")
+    parser.add_argument("--output_dir", type=str, default="./scam-classifier-model-universal")
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-5)

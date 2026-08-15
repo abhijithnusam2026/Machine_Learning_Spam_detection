@@ -17,11 +17,11 @@ def set_config(backend):
         # We temporarily override backend to gguf so the pipeline initializes correctly,
         # but point it to the pruned artifacts
         config["backend"] = "gguf"
-        config["gguf_classifier_model_path"] = "models/gguf_classifier_pruned/classifier_q8_0.gguf"
-        config["ggml_whisper_model_path"] = "models/ggml_whisper_pruned/whisper_q8_0.bin"
+        config["classifier_model_path"] = "models/gguf_classifier_pruned/classifier_q8_0.gguf"
+        config["asr_model_path"] = "models/ggml_whisper_pruned/whisper_q8_0.bin"
     elif backend == "gguf":
-        config["gguf_classifier_model_path"] = "models/gguf_classifier/classifier_q8_0.gguf"
-        config["ggml_whisper_model_path"] = "models/ggml_whisper/whisper_q8_0.bin"
+        config["classifier_model_path"] = "models/gguf_classifier/classifier_q8_0.gguf"
+        config["asr_model_path"] = "models/ggml_whisper/whisper_q8_0.bin"
         
     with open(config_path, "w") as f:
         json.dump(config, f, indent=4)
@@ -31,7 +31,7 @@ def run_benchmark(backend_name, audio_dir="data/large_audio_test"):
     set_config(backend_name)
     
     # Standard import for the modular structure
-    from src.evaluation.10_inference_pipeline import InferencePipeline
+    from src.evaluation.inference_pipeline import InferencePipeline
     
     print(f"Initializing {backend_name.upper()} Pipeline...")
     pipeline = InferencePipeline()
