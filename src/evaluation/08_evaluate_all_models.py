@@ -138,8 +138,22 @@ def main():
             # Assuming manifest exists in the bucket; script will gracefully skip missing files
             try:
                 s3_client.download_file(repo_name, "data/large_audio_test/manifest.csv", f"{local_audio_dir}/manifest.csv")
+                
+                # Now download the actual audio files listed in the manifest
+                manifest_df = pd.read_csv(f"{local_audio_dir}/manifest.csv")
+                for _, row in manifest_df.iterrows():
+                    audio_filename = os.path.basename(row['file'])
+                    remote_audio_path = f"data/large_audio_test/{audio_filename}"
+                    local_audio_path = f"{local_audio_dir}/{audio_filename}"
+                    if not os.path.exists(local_audio_path):
+                        print(f"Downloading {audio_filename}...")
+                        try:
+                            s3_client.download_file(repo_name, remote_audio_path, local_audio_path)
+                        except Exception as inner_e:
+                            print(f"Failed to fetch {audio_filename}: {inner_e}")
+                            
             except Exception as e:
-                print(f"Failed to fetch manifest: {e}")
+                print(f"Failed to fetch manifest or audio files: {e}")
         
         # Backends to benchmark
         backends = ["fp16", "gguf", "gguf_pruned"]

@@ -132,19 +132,6 @@ def main():
         os.environ["DAGSHUB_TOKEN"] = password
         dagshub.auth.add_app_token(password)
         
-    if repo_owner and repo_name:
-        dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
-        print(f"Fetching latest datasets from DagsHub S3 Bucket ({repo_owner}/{repo_name})...")
-        try:
-            s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
-            for file in [args.train_data, args.test_data]:
-                print(f"Downloading {file} from S3...")
-                os.makedirs(os.path.dirname(file), exist_ok=True)
-                remote_path = f"data/{stage}/phase2_asr/{os.path.basename(file)}"
-                s3_client.download_file(repo_name, remote_path, file)
-        except Exception as e:
-            print(f"Warning: Failed to download datasets from S3 ({e}). Will try to use local copy if it exists.")
-
     # 1. Load data
     if not os.path.exists(args.train_data) or not os.path.exists(args.test_data):
         print("ERROR: Datasets not found locally and failed to download from DagsHub.")
