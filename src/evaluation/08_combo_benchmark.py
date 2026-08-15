@@ -53,6 +53,9 @@ def evaluate_combinations():
         run_name = f"combo_{clf}_{asr}"
         config = base_config.copy()
         
+        config["classifier_backend"] = "gguf" if "gguf" in clf else "fp16"
+        config["asr_backend"] = "fp16" if asr == "fp16" else "gguf"
+        
         if clf == "gguf":
             config["backend"] = "gguf"
             config["classifier_model_path"] = "models/gguf_classifier/classifier_q8_0.gguf"
@@ -98,8 +101,8 @@ def evaluate_combinations():
             
             start_time = time.time()
             try:
-                res = pipeline.predict(audio_path=audio_path)
-                y_pred.append(res['label'])
+                res = pipeline.process_audio(audio_file=audio_path)
+                y_pred.append(res['prediction'])
             except Exception as e:
                 print(f"Failed prediction on {audio_path}: {e}")
                 y_pred.append(0)

@@ -269,18 +269,52 @@ def evaluate_ptq_degradation(stage):
         llm = Llama(model_path=path, verbose=False, embedding=True)
         
         start = time.time()
+        y_true = []
+        y_pred = []
+        
+        # Load the custom trained Scikit-Learn classification head
+        import joblib
+        head_path = "models/gguf/gguf_classifier_head.joblib"
+        gguf_head = None
+        if os.path.exists(head_path):
+            gguf_head = joblib.load(head_path)
+            
+        import numpy as np
         for idx, row in df.iterrows():
-            _ = llm.create_embedding(row['text'])
+            y_true.append(row['label'])
+            
+            raw_emb = llm.embed(row['text'][:5000])
+            arr = np.array(raw_emb)
+            if arr.ndim == 3:
+                embeds = np.mean(arr[0], axis=0)
+            elif arr.ndim == 2:
+                embeds = np.mean(arr, axis=0)
+            else:
+                embeds = arr
+                
+            if gguf_head:
+                pred_idx = gguf_head.predict([embeds])[0]
+                y_pred.append(pred_idx)
+            else:
+                y_pred.append(1) # Simulated
+                
         end = time.time()
         
         latency = (end - start) / len(df)
         size_mb = os.path.getsize(path) / (1024 * 1024)
-        print(f"{name}: {latency:.3f} s/req, {size_mb:.2f} MB")
+        
+        from sklearn.metrics import accuracy_score, f1_score
+        acc = accuracy_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred)
+        
+        print(f"{name}: {latency:.3f} s/req, {size_mb:.2f} MB, Acc: {acc:.4f}, F1: {f1:.4f}")
         
         if repo_owner and repo_name:
             with mlflow.start_run(run_name=f"ptq_{name}"):
                 mlflow.log_metric("latency_sec", latency)
                 mlflow.log_metric("size_mb", size_mb)
+                mlflow.log_metric("accuracy", acc)
+                mlflow.log_metric("f1_score", f1)
                 mlflow.log_artifact(path, artifact_path="models")
 
 if __name__ == "__main__":

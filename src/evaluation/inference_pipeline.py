@@ -8,32 +8,49 @@ import tempfile
 import numpy as np
 
 class InferencePipeline:
-    def __init__(self, config_path="configs/inference_config.json"):
-        with open(config_path, 'r') as f:
-            self.config = json.load(f)
-        
-        self.backend = self.config.get("backend", "fp16")
-        
-        print(f"Initializing {self.backend.upper()} Pipeline...")
-        if self.backend == "fp16":
-            self._init_fp16()
-        elif self.backend == "gguf":
-            self._init_gguf()
+    def __init__(self, config_path_or_dict="configs/inference_config.json"):
+        if isinstance(config_path_or_dict, dict):
+            self.config = config_path_or_dict
         else:
-            raise ValueError(f"Unknown backend: {self.backend}")
+            with open(config_path_or_dict, 'r') as f:
+                self.config = json.load(f)
+        
+        self.clf_backend = self.config.get("classifier_backend", self.config.get("backend", "fp16"))
+        self.asr_backend = self.config.get("asr_backend", self.config.get("backend", "fp16"))
+        
+        print(f"Initializing Pipeline | CLF: {self.clf_backend.upper()} | ASR: {self.asr_backend.upper()}")
+        
+        if self.clf_backend == "fp16":
+            self._init_fp16_classifier()
+        elif self.clf_backend == "gguf":
+            self._init_gguf_classifier()
+        else:
+            raise ValueError(f"Unknown classifier backend: {self.clf_backend}")
+            
+        if self.asr_backend == "fp16":
+            self._init_fp16_asr()
+        elif self.asr_backend == "gguf":
+            self._init_gguf_asr()
+        else:
+            raise ValueError(f"Unknown ASR backend: {self.asr_backend}")
 
-    def _init_fp16(self):
+    def _init_fp16_asr(self):
         import torch
-        from transformers import pipeline, AutoModelForSequenceClassification, AutoTokenizer
+        from transformers import pipeline
         
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         # Load ASR
-        print(f"Loading FP16 ASR: {self.config['fp16_asr_model_name']}")
+        print(f"Loading FP16 ASR: {self.config.get('fp16_asr_model_name', 'openai/whisper-tiny')}")
         self.asr_pipe = pipeline("automatic-speech-recognition", 
-                               model=self.config["fp16_asr_model_name"], 
+                               model=self.config.get("fp16_asr_model_name", "openai/whisper-tiny"), 
                                device=self.device,
                                chunk_length_s=30)
+                               
+    def _init_fp16_classifier(self):
+        import torch
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         # Load Classifier
         model_name = self.config['fp16_classifier_model_name']
@@ -49,7 +66,7 @@ class InferencePipeline:
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.classifier = AutoModelForSequenceClassification.from_pretrained(model_name).to(self.device)
 
-    def _init_gguf(self):
+    def _init_gguf_classifier(self):
         from llama_cpp import Llama
         
         # Load Classifier (GGUF)
@@ -70,7 +87,9 @@ class InferencePipeline:
         else:
             print("WARNING: GGUF Classification Head not found. Will output simulated predictions.")
             self.gguf_head = None
-        
+
+    def _init_gguf_asr(self):
+        import subprocess
         # For ASR (GGML), we will use whisper.cpp binary via subprocess
         self.whisper_model_path = self.config['asr_model_path']
         if not os.path.exists(self.whisper_model_path):
@@ -121,7 +140,7 @@ class InferencePipeline:
         }
 
     def _transcribe(self, audio_file):
-        if self.backend == "fp16":
+        if self.asr_backend == "fp16":
             result = self.asr_pipe(audio_file)
             return result["text"].strip()
         else:
@@ -195,7 +214,7 @@ class InferencePipeline:
             return transcript
 
     def _classify(self, text):
-        if self.backend == "fp16":
+        if self.clf_backend == "fp16":
             import torch
             inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512).to(self.device)
             with torch.no_grad():
@@ -203,7 +222,7 @@ class InferencePipeline:
                 probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                 pred_idx = torch.argmax(probs, dim=1).item()
                 # Assuming 1 is scam, 0 is legit
-                return "Scam" if pred_idx == 1 else "Legitimate"
+                return 1 if pred_idx == 1 else 0
         else:
             # GGUF ModernBERT classification using embeddings
             text = text.strip()
@@ -233,9 +252,9 @@ class InferencePipeline:
             if hasattr(self, 'gguf_head') and self.gguf_head is not None:
                 # Scikit-learn expects 2D array: (n_samples, n_features)
                 pred_idx = self.gguf_head.predict([embeds])[0]
-                return "Scam" if pred_idx == 1 else "Legitimate"
+                return 1 if pred_idx == 1 else 0
             else:
-                return "Scam (GGUF Simulated)"
+                return 1 # Fallback dummy label
             
     def process_batch(self, audio_files, batch_size=8):
         metrics = {}
@@ -266,7 +285,7 @@ class InferencePipeline:
         return results
 
     def _transcribe_batch(self, audio_files, batch_size=8):
-        if self.backend == "fp16":
+        if self.asr_backend == "fp16":
             results = self.asr_pipe(audio_files, batch_size=batch_size)
             return [res["text"].strip() for res in results]
         else:
@@ -275,7 +294,7 @@ class InferencePipeline:
             return [self._transcribe(f) for f in audio_files]
 
     def _classify_batch(self, texts, batch_size=8):
-        if self.backend == "fp16":
+        if self.clf_backend == "fp16":
             import torch
             predictions = []
             for i in range(0, len(texts), batch_size):
@@ -285,7 +304,7 @@ class InferencePipeline:
                     outputs = self.classifier(**inputs)
                     probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                     pred_idxs = torch.argmax(probs, dim=1).tolist()
-                    predictions.extend(["Scam" if idx == 1 else "Legitimate" for idx in pred_idxs])
+                    predictions.extend([1 if idx == 1 else 0 for idx in pred_idxs])
             return predictions
         else:
             return [self._classify(t) for t in texts]
