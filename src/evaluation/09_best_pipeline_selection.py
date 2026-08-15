@@ -43,25 +43,31 @@ def select_best_pipeline():
     asr = best_row['asr']
     
     if clf == "gguf":
-        config["backend"] = "gguf"
+        config["classifier_backend"] = "gguf"
         config["classifier_model_path"] = "models/gguf_classifier/classifier_q8_0.gguf"
     elif clf == "gguf_pruned":
-        config["backend"] = "gguf"
+        config["classifier_backend"] = "gguf"
         config["classifier_model_path"] = "models/gguf_classifier_pruned/classifier_q8_0.gguf"
     else:
-        config["backend"] = "fp16"
+        config["classifier_backend"] = "fp16"
         config["fp16_classifier_model_name"] = "./scam-classifier-model-transcript"
         
     if asr == "fp16":
+        config["asr_backend"] = "fp16"
         config["asr_model_path"] = "models/ggml_whisper/whisper_f16.bin"
     elif asr == "bf16":
+        config["asr_backend"] = "gguf"
         config["asr_model_path"] = "models/ggml_whisper/whisper_bf16.bin"
     elif asr == "q8_0":
+        config["asr_backend"] = "gguf"
         config["asr_model_path"] = "models/ggml_whisper/whisper_q8_0.bin"
     else:
+        config["asr_backend"] = "gguf"
         config["asr_model_path"] = "models/ggml_whisper/whisper_q4_k.bin"
         
     # Clean up old/unused keys
+    if "backend" in config:
+        del config["backend"]
     if "gguf_classifier_model_path" in config:
         del config["gguf_classifier_model_path"]
     if "ggml_whisper_model_path" in config:
