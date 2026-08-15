@@ -10,11 +10,12 @@ if os.path.exists(config_path):
         config = json.load(f)
 
 # Load pipeline (will auto-download models from DagsHub if DagsHub secrets are set in HF Spaces)
-print("Initializing CPU (GGUF) Inference Pipeline...")
+print("Initializing configured inference pipeline...")
 import importlib
 infer_module = importlib.import_module("src.evaluation.inference_pipeline")
 InferencePipeline = infer_module.InferencePipeline
 pipeline = InferencePipeline()
+backend_label = f"ASR={pipeline.asr_backend.upper()} | Classifier={pipeline.clf_backend.upper()}"
 
 def process_audio(audio_file_path):
     if not audio_file_path:
@@ -26,6 +27,10 @@ def process_audio(audio_file_path):
         
         transcript = result.get("transcript", "")
         prediction = result.get("prediction", "Unknown")
+        if prediction == 1:
+            prediction = "Scam"
+        elif prediction == 0:
+            prediction = "Legitimate"
         metrics = result.get("metrics", {})
         
         latency_str = (f"ASR: {metrics.get('asr_latency', 0):.2f}s | "
@@ -38,9 +43,9 @@ def process_audio(audio_file_path):
         return f"Error: {str(e)}", "Error", "Error"
 
 # Build Gradio UI
-with gr.Blocks(title="Scam Detection AI (CPU Edge Edition)", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# 🛡️ Scam Detection AI (CPU Edge Edition)")
-    gr.Markdown("Upload an audio recording of a phone call. This free Hugging Face Space uses our hyper-optimized 8-bit quantized GGUF models to run completely on a CPU without a GPU!")
+with gr.Blocks(title="Scam Detection AI", theme=gr.themes.Soft()) as demo:
+    gr.Markdown("# Scam Detection AI")
+    gr.Markdown(f"Upload an audio recording of a phone call. Active pipeline: `{backend_label}`.")
     
     with gr.Row():
         with gr.Column():

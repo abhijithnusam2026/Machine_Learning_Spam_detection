@@ -53,28 +53,31 @@ def select_best_pipeline():
     clf = best_row['classifier']
     asr = best_row['asr']
     
-    if clf == "gguf":
+    classifier_paths = {
+        "gguf": "models/gguf_classifier/classifier_q8_0.gguf",
+        "gguf_pruned": "models/gguf_classifier_pruned/classifier_q8_0.gguf",
+    }
+    whisper_paths = {
+        "fp16": "openai/whisper-tiny.en",
+        "bf16": "models/ggml_whisper/whisper_bf16.bin",
+        "q8_0": "models/ggml_whisper/whisper_q8_0.bin",
+        "q4_k": "models/ggml_whisper/whisper_q4_k.bin",
+    }
+
+    if clf in classifier_paths:
         config["classifier_backend"] = "gguf"
-        config["classifier_model_path"] = "models/gguf_classifier/classifier_q8_0.gguf"
-    elif clf == "gguf_pruned":
-        config["classifier_backend"] = "gguf"
-        config["classifier_model_path"] = "models/gguf_classifier_pruned/classifier_q8_0.gguf"
+        config["classifier_model_path"] = classifier_paths[clf]
+        config["gguf_classifier_head_path"] = "models/gguf/gguf_classifier_head.joblib"
     else:
         config["classifier_backend"] = "fp16"
-        config["fp16_classifier_model_name"] = "./scam-classifier-model-transcript"
+        config["fp16_classifier_model_name"] = "./scam-classifier-model-transcript-lora"
         
     if asr == "fp16":
         config["asr_backend"] = "fp16"
-        config["asr_model_path"] = "models/ggml_whisper/whisper_f16.bin"
-    elif asr == "bf16":
-        config["asr_backend"] = "gguf"
-        config["asr_model_path"] = "models/ggml_whisper/whisper_bf16.bin"
-    elif asr == "q8_0":
-        config["asr_backend"] = "gguf"
-        config["asr_model_path"] = "models/ggml_whisper/whisper_q8_0.bin"
+        config["fp16_asr_model_name"] = whisper_paths[asr]
     else:
         config["asr_backend"] = "gguf"
-        config["asr_model_path"] = "models/ggml_whisper/whisper_q4_k.bin"
+        config["asr_model_path"] = whisper_paths[asr]
         
     # Clean up old/unused keys
     if "backend" in config:

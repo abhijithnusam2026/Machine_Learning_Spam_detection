@@ -49,6 +49,17 @@ def evaluate_combinations():
     assert manifest is not None, f"CRITICAL ERROR: {manifest_path} not found. Audio benchmark cannot proceed."
     assert len(files) == len(manifest), "CRITICAL ERROR: Downloaded .wav files do not match expected manifest count."
         
+    classifier_paths = {
+        "gguf": "models/gguf_classifier/classifier_q8_0.gguf",
+        "gguf_pruned": "models/gguf_classifier_pruned/classifier_q8_0.gguf",
+    }
+    whisper_paths = {
+        "fp16": "openai/whisper-tiny.en",
+        "bf16": "models/ggml_whisper/whisper_bf16.bin",
+        "q8_0": "models/ggml_whisper/whisper_q8_0.bin",
+        "q4_k": "models/ggml_whisper/whisper_q4_k.bin",
+    }
+
     # Define the variants available
     classifier_variants = ["fp16", "gguf", "gguf_pruned"]
     whisper_variants = ["fp16", "bf16", "q8_0", "q4_k"]
@@ -78,21 +89,16 @@ def evaluate_combinations():
         config["classifier_backend"] = "gguf" if "gguf" in clf else "fp16"
         config["asr_backend"] = "fp16" if asr == "fp16" else "gguf"
         
-        if clf == "gguf":
-            config["classifier_model_path"] = "models/gguf_classifier/classifier_q8_0.gguf"
-        elif clf == "gguf_pruned":
-            config["classifier_model_path"] = "models/gguf_classifier_pruned/classifier_q8_0.gguf"
+        if clf in classifier_paths:
+            config["classifier_model_path"] = classifier_paths[clf]
+            config["gguf_classifier_head_path"] = "models/gguf/gguf_classifier_head.joblib"
         else:
-            config["fp16_classifier_model_name"] = "./scam-classifier-model-transcript"
+            config["fp16_classifier_model_name"] = "./scam-classifier-model-transcript-lora"
             
         if asr == "fp16":
-            config["asr_model_path"] = "models/ggml_whisper/whisper_f16.bin"
-        elif asr == "bf16":
-            config["asr_model_path"] = "models/ggml_whisper/whisper_bf16.bin"
-        elif asr == "q8_0":
-            config["asr_model_path"] = "models/ggml_whisper/whisper_q8_0.bin"
+            config["fp16_asr_model_name"] = whisper_paths[asr]
         else:
-            config["asr_model_path"] = "models/ggml_whisper/whisper_q4_k.bin"
+            config["asr_model_path"] = whisper_paths[asr]
             
         if not os.path.exists(config.get("classifier_model_path", "")) and clf != "fp16":
             print(f"Classifier path {config.get('classifier_model_path')} not found. Skipping combo.")

@@ -80,12 +80,17 @@ class InferencePipeline:
         
         # Load the custom trained Scikit-Learn classification head
         import joblib
-        head_path = "models/gguf/gguf_classifier_head.joblib"
-        if os.path.exists(head_path):
-            print(f"Loading GGUF Classification Head: {head_path}")
-            self.gguf_head = joblib.load(head_path)
-        else:
-            raise RuntimeError("CRITICAL ERROR: GGUF Classification Head not found. Cannot evaluate GGUF accuracy without the classification head.")
+        head_path = self.config.get("gguf_classifier_head_path", "models/gguf/gguf_classifier_head.joblib")
+        if not os.path.exists(head_path):
+            print(f"Downloading {head_path} from DagsHub...")
+            self._download_from_dagshub(head_path)
+        if not os.path.exists(head_path):
+            raise RuntimeError(
+                "CRITICAL ERROR: GGUF Classification Head not found. "
+                f"Expected path: {head_path}"
+            )
+        print(f"Loading GGUF Classification Head: {head_path}")
+        self.gguf_head = joblib.load(head_path)
 
     def _init_gguf_asr(self):
         import subprocess
