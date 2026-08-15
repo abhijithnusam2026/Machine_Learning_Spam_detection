@@ -13,6 +13,7 @@ import os
 import random
 import sys
 from pathlib import Path
+from contextlib import nullcontext
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -75,11 +76,39 @@ def apply_lora(model, args):
 
 
 def get_device():
+    local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
+    if local_rank >= 0 and torch.cuda.is_available():
+        torch.cuda.set_device(local_rank)
+        return f"cuda:{local_rank}"
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():
         return "cuda"
     return "cpu"
+
+
+def is_main_process():
+    return int(os.environ.get("RANK", "0")) == 0
+
+
+def configure_mlflow_for_rank():
+    if is_main_process():
+        return
+
+    def noop(*args, **kwargs):
+        return None
+
+    mlflow.set_experiment = noop
+    mlflow.log_artifact = noop
+    mlflow.log_artifacts = noop
+    mlflow.set_tag = noop
+    mlflow.log_param = noop
+    mlflow.log_params = noop
+    mlflow.log_metric = noop
+    mlflow.log_metrics = noop
+    mlflow.start_run = lambda *args, **kwargs: nullcontext()
+    if hasattr(mlflow, "transformers"):
+        mlflow.transformers.log_model = noop
 
 
 def compute_metrics(eval_pred):
@@ -131,6 +160,7 @@ def main():
     parser.add_argument("--push_to_hub", action="store_true", help="Push model to Hugging Face Hub privately")
     args = parser.parse_args()
     stage_slug = PIPELINE_STAGE.replace("/", "-")
+    configure_mlflow_for_rank()
 
     # Enforce strict reproducibility
     seed = 42
@@ -274,12 +304,13 @@ def main():
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         logging_steps=20,
-        report_to="mlflow",
-        push_to_hub=push_to_hub,
+        report_to="mlflow" if is_main_process() else "none",
+        push_to_hub=push_to_hub and is_main_process(),
         hub_model_id=hub_model_id,
         hub_token=hf_token,
         hub_private_repo=True,
         fp16=torch.cuda.is_available(), # Massively speeds up training on T4 GPUs
+        ddp_find_unused_parameters=False,
     )
 
     trainer = Trainer(
@@ -369,15 +400,20 @@ def main():
 
         if args.finetune_method == "lora":
             print("Merging LoRA adapters into the base model for downstream PTQ/export compatibility...")
-            trainer.model = trainer.model.merge_and_unload()
+            model_to_merge = trainer.model.module if hasattr(trainer.model, "module") else trainer.model
+            trainer.model = model_to_merge.merge_and_unload()
             trainer.model.to(device)
 
         # 7. Save final model + tokenizer
         trainer.save_model(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
-        print(f"Model saved locally to {args.output_dir}")
+        if is_main_process():
+            tokenizer.save_pretrained(args.output_dir)
+            print(f"Model saved locally to {args.output_dir}")
         
         # 8. Log the model to DagsHub MLflow
+        if not is_main_process():
+            return
+
         print("Uploading model weights to DagsHub MLflow registry...")
         components = {
             "model": trainer.model,
