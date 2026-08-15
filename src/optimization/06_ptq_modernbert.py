@@ -7,39 +7,11 @@ Quantizes them to F16, Q8_0, and Q4_K_M.
 import os
 import argparse
 import subprocess
-from pathlib import Path
 
 import dagshub
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-BRANCH_STAGE_MAP = {
-    "feature/phase-2-audio-asr": "feature/phase-2-audio-asr",
-    "feature/phase-3-serving-quantization": "feature/phase-3-serving-quantization",
-    "feature/phase-1.5-ultimate-dataset": "model-modernbert-universal",
-    "model-long-context": "model-modernbert-universal",
-    "model-distilbert": "model-distilbert",
-    "main": "main",
-}
-
-
-def detect_branch(default="main"):
-    env_branch = os.getenv("DAGSHUB_BRANCH") or os.getenv("GIT_BRANCH")
-    if env_branch:
-        return env_branch.strip()
-    result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    branch = result.stdout.strip()
-    return branch or default
-
-
-def stage_for_branch(branch):
-    return BRANCH_STAGE_MAP.get(branch, branch.replace("/", "-") or "main")
+STAGE_NAME = "06_ptq_modernbert"
 
 def run_cmd(cmd, cwd=None):
     print(f"Running: {' '.join(cmd)}")
@@ -60,7 +32,7 @@ def upload_to_dagshub(local_path, remote_path, stage):
         except Exception as e:
             print(f"  [FAILED] S3 Upload failed: {e}")
 
-def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="models/gguf_classifier", stage="feature/phase-2-audio-asr"):
+def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="models/gguf_classifier", stage=STAGE_NAME):
     print(f"\n--- Exporting Classifier ({model_name}) to GGUF ---")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -146,7 +118,7 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
             print(f"[SUCCESS] Generated: {f} ({os.path.getsize(f) / (1024*1024):.2f} MB)")
             upload_to_dagshub(f, f"artifacts/{stage}/gguf/{os.path.basename(f)}", stage)
 
-def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/ggml_whisper", stage="feature/phase-2-audio-asr"):
+def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/ggml_whisper", stage=STAGE_NAME):
     print(f"\n--- Exporting Whisper ({model_name}) to GGML ---")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -322,8 +294,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_name", type=str, default="./scam-classifier-model-transcript")
     parser.add_argument("--whisper_name", type=str, default="openai/whisper-tiny")
     args = parser.parse_args()
-    branch = detect_branch()
-    stage = stage_for_branch(branch)
+    stage = STAGE_NAME
 
     export_stage_clf = f"{stage}_pruned" if "pruned" in args.model_name else stage
     export_dir_clf = "models/gguf_classifier_pruned" if "pruned" in args.model_name else "models/gguf_classifier"
