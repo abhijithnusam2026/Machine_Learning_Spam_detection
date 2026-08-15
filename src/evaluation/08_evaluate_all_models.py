@@ -165,6 +165,7 @@ def main():
                         
         except Exception as e:
             print(f"Failed to fetch manifest or audio files: {e}")
+            raise
         
         # Backends to benchmark
         backends = ["fp16", "gguf", "gguf_pruned"]
