@@ -12,7 +12,7 @@ MODERNBERT_MODEL_NAME ?= answerdotai/ModernBERT-base
 	build-data build-data-no-mlflow \
 	validate-data data data-no-mlflow \
 	train-distilbert train-modernbert train-modernbert-lora train-modernbert-full \
-	train-transcript train-transcript-lora recover-distilbert quantize evaluate all
+	train-transcript train-transcript-lora quantize evaluate all
 
 download-data:
 	$(PYTHON) src/data/00_download_raw_data.py
@@ -35,16 +35,6 @@ data-no-mlflow: build-data-no-mlflow validate-data
 
 train-distilbert: data
 	$(PYTHON) src/models/03_train_baseline_distilbert.py
-
-recover-distilbert:
-	$(PYTHON) src/models/register_saved_classifier.py \
-		--model_dir ./scam-classifier-model-baseline \
-		--eval_data data/processed/global_val.csv \
-		--experiment scam-detection/refactored_pipeline/03_baseline_distilbert \
-		--run_name 03-distilbert-recovery \
-		--pipeline_stage 03_baseline_distilbert \
-		--base_model_name distilbert-base-uncased \
-		--data_filter distilbert_baseline
 
 train-modernbert: data
 	CUDA_VISIBLE_DEVICES=$(CUDA_VISIBLE_DEVICES) torchrun --nproc_per_node=$(NPROC_PER_NODE) src/models/04_train_universal_modernbert.py \
