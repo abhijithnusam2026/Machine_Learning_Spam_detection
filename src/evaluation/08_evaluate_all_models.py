@@ -146,6 +146,8 @@ def main():
             
             # Now download the actual audio files listed in the manifest
             manifest_df = pd.read_csv(f"{local_audio_dir}/manifest.csv")
+            failed_downloads = []
+            
             for _, row in manifest_df.iterrows():
                 audio_filename = os.path.basename(row['file'])
                 remote_audio_path = f"data/large_audio_test/{audio_filename}"
@@ -156,6 +158,10 @@ def main():
                         s3_client.download_file(repo_name, remote_audio_path, local_audio_path)
                     except Exception as inner_e:
                         print(f"Failed to fetch {audio_filename}: {inner_e}")
+                        failed_downloads.append(audio_filename)
+            
+            if failed_downloads:
+                raise RuntimeError(f"The following {len(failed_downloads)} audio files failed to download from DagsHub: {failed_downloads}")
                         
         except Exception as e:
             print(f"Failed to fetch manifest or audio files: {e}")
