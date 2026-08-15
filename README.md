@@ -71,6 +71,14 @@ To validate processed train/validation/test/PTQ partitions before launching long
 make validate-data
 ```
 
+To rebuild data in a fresh workspace without creating duplicate data-prep MLflow runs:
+
+```bash
+python src/data/00_download_raw_data.py --skip_mlflow
+python src/data/02_build_datasets.py --skip_mlflow
+python src/data/03_validate_partitions.py --skip_mlflow
+```
+
 ### Fast LoRA Completion Path
 To complete the end-to-end pipeline quickly, train ModernBERT with LoRA, merge the adapter into a normal Hugging Face model directory, then pass that explicit model directory into transcript retraining and PTQ:
 

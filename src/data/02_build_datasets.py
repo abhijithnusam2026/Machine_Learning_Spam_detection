@@ -1,3 +1,4 @@
+import argparse
 import os
 import json
 import random
@@ -57,6 +58,14 @@ def stratified_sample(df, n, strata_cols, random_state):
     return sampled_df.sample(frac=1.0, random_state=random_state).reset_index(drop=True)
 
 def main():
+    parser = argparse.ArgumentParser(description="Build canonical processed datasets.")
+    parser.add_argument(
+        "--skip_mlflow",
+        action="store_true",
+        help="Build processed files without creating a DagsHub MLflow tracking run.",
+    )
+    args = parser.parse_args()
+
     print("--- Building Unified Modular Datasets ---")
     
     # 1. Load Synthesized JSON data (LLM Data)
@@ -180,6 +189,10 @@ def main():
     print(f"PTQ Calibration:  {len(ptq_calibration)} rows (sampled from train only)")
     
     print("\nDataset building complete. Data ready for modeling in data/processed/.")
+
+    if args.skip_mlflow:
+        print("Skipped MLflow logging because --skip_mlflow was set.")
+        return
 
     # 6. Log processed datasets to MLflow
     load_dotenv()

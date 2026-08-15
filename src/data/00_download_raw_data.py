@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -27,6 +28,14 @@ def download_file(s3_client, repo_name, s3_key, local_path):
         return True
 
 def main():
+    parser = argparse.ArgumentParser(description="Download foundational raw datasets from DagsHub.")
+    parser.add_argument(
+        "--skip_mlflow",
+        action="store_true",
+        help="Download raw files without creating a DagsHub MLflow tracking run.",
+    )
+    args = parser.parse_args()
+
     load_dotenv()
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
     repo_name = os.getenv("DAGSHUB_REPO_NAME")
@@ -77,6 +86,10 @@ def main():
             "Stopping before dataset processing or MLflow logging to avoid silent source-domain loss.\n"
             f"{missing_list}"
         )
+
+    if args.skip_mlflow:
+        print("Download complete. Skipped MLflow logging because --skip_mlflow was set.")
+        return
 
     dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
     mlflow.set_experiment("scam-detection/refactored_pipeline/00_download_raw_data")
