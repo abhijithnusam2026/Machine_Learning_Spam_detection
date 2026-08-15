@@ -16,10 +16,10 @@ flowchart TD
 
     G --> H["ptq_calibration.csv<br/>256-row stratified sample<br/>from global_train only"]
 
-    G --> I["03 DistilBERT baseline<br/>written_text only<br/>excluding synthetic"]
+    G --> I["03 DistilBERT baseline<br/>kaggle_composite only"]
     F --> I
 
-    G --> J["04 ModernBERT universal<br/>written_text only<br/>including synthetic"]
+    G --> J["04 ModernBERT universal<br/>written_text only<br/>synthetic + Teeconnie non-scam augmentation"]
     F --> J
 
     G --> K["05 ModernBERT ASR retraining<br/>spoken_asr only"]
@@ -44,6 +44,9 @@ flowchart TD
 ## Split Contract
 
 - `global_train.csv`: used for model fitting. It is the only source for `ptq_calibration.csv`.
+- DistilBERT baseline filters this split to `source_dataset == kaggle_composite` only.
+- ModernBERT universal training filters this split to all `written_text` rows, including Kaggle composite, synthetic examples, and Teeconnie non-scam rows. Teeconnie scam rows are intentionally excluded to avoid worsening the already scam-heavy written corpus.
+- Transcript retraining filters this split to `spoken_asr` rows only.
 - `global_val.csv`: used for training-time validation and checkpoint/model selection.
 - `global_test.csv`: frozen final classifier holdout, used for post-training and post-quantization evaluation.
 - `ptq_calibration.csv`: train-only calibration split for ONNX Runtime static INT8 PTQ. It is asserted to be disjoint from validation and test.

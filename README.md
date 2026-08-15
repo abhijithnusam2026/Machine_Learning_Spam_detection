@@ -24,8 +24,8 @@ Downloads raw sources (Kaggle Phishing/Enron/SMS datasets, Teeconnie data, synth
 Data partition diagram: [docs/data_partition_flow.md](docs/data_partition_flow.md) or [SVG](docs/assets/data_partition_flow.svg).
 
 ### 2. Model Training (`src/models/`)
-- **Baseline**: DistilBERT trained on the initial Phase 1 written text data (explicitly excluding Phase 1.5 synthetic LLM data).
-- **Universal**: ModernBERT trained on the expanded written corpus (including the synthetic LLM data).
+- **Baseline**: DistilBERT trained only on the original Kaggle composite corpus.
+- **Universal**: ModernBERT trained on the expanded written corpus (`kaggle_composite`, synthetic LLM data, and Teeconnie non-scam call examples used as legitimate-call balancing augmentation).
 - **Transcript Retraining**: ModernBERT fine-tuned exclusively on ASR spoken transcripts.
 
 ### 3. Optimization (`src/optimization/`)
@@ -63,6 +63,12 @@ To execute the canonical journey from raw data download all the way to final ben
 make all
 # OR
 bash run_pipeline.sh
+```
+
+To validate processed train/validation/test/PTQ partitions before launching long GPU training:
+
+```bash
+make validate-data
 ```
 
 ### Live Deployment

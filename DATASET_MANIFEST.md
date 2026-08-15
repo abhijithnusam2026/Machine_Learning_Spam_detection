@@ -4,22 +4,22 @@ This document tracks the provenance, composition, and transformations of dataset
 
 ## Phase 1: Initial Baseline Dataset
 - **Pipeline Stage:** `03_baseline_distilbert`
-- **Source:** Kaggle SMS & Email Spam Datasets + Synthetic LLM generation.
+- **Source:** Initial Kaggle composite of SMS, email spam, phishing, and Enron-style written corpora.
   - *SMS Spam Collection Dataset* (https://www.kaggle.com/uciml/sms-spam-collection-dataset)
   - *Enron Email Dataset* (https://www.kaggle.com/datasets/wcukierski/enron-email-dataset)
 - **DagsHub S3 Path:** `data/raw/` and `data/processed/`
-- **Description:** Text-only messages, heavily focused on email and SMS structures.
+- **Description:** Text-only baseline corpus, heavily focused on email and SMS structures.
 - **Row Count:** ~10,000 samples.
 - **Label Distribution:** ~8,500 Legitimate, ~1,500 Scam.
 - **Preprocessing:** `python src/data/00_download_raw_data.py` followed by `python src/data/02_build_datasets.py`.
 
 ## Phase 1.5: The Universal Refinement
 - **Pipeline Stage:** `04_universal_modernbert`
-- **Source:** Merged multiple external Kaggle corpora.
+- **Source:** Merged written-text corpora, including the original Kaggle composite, synthetic LLM examples, and Teeconnie non-scam examples.
   - *Phishing Email Dataset* (https://www.kaggle.com/datasets/subhajournal/phishingemails)
   - *Spam Email Data* (https://www.kaggle.com/datasets/nitishabharathi/email-spam-dataset)
 - **DagsHub S3 Path:** `data/phase1.5/`
-- **Description:** A massively expanded dataset to fix label noise and domain mismatch.
+- **Description:** A massively expanded dataset to fix label noise and domain mismatch. Teeconnie is intentionally used as legitimate-call augmentation only because the composite and synthetic corpora are already scam-heavy.
 - **Row Count:** ~40,000 samples total.
   - **Train:** 32,154 rows (16,082 Scam, 16,072 Legitimate)
   - **Val:** 4,019 rows (2,010 Scam, 2,009 Legitimate)

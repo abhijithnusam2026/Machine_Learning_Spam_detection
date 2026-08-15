@@ -11,6 +11,12 @@ import pandas as pd
 import torch
 import os
 import random
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import mlflow
 import requests
@@ -111,9 +117,9 @@ def main():
     train_df = pd.read_csv(args.train_data)
     test_df = pd.read_csv(args.test_data)
     
-    # Baseline (Phase 1) uses written text data but EXCLUDES Phase 1.5 Synthetic LLM data
-    train_df = train_df[(train_df["source_domain"] == "written_text") & (train_df["source_dataset"] != "synthetic")]
-    test_df = test_df[(test_df["source_domain"] == "written_text") & (test_df["source_dataset"] != "synthetic")]
+    # Baseline uses only the original composite corpus. Teeconnie, synthetic, and ASR data are introduced later.
+    train_df = train_df[train_df["source_dataset"] == "kaggle_composite"]
+    test_df = test_df[test_df["source_dataset"] == "kaggle_composite"]
     
     assert "text" in train_df.columns and "label" in train_df.columns, "Train CSV must have 'text' and 'label' columns"
     assert "text" in test_df.columns and "label" in test_df.columns, "Test CSV must have 'text' and 'label' columns"
@@ -222,7 +228,7 @@ def main():
                 "model_name": args.model_name,
                 "train_data": args.train_data,
                 "eval_data": args.test_data,
-                "training_filter": "source_domain == written_text and source_dataset != synthetic",
+                "training_filter": "source_dataset == kaggle_composite",
                 "epochs": args.epochs,
                 "batch_size": args.batch_size,
                 "learning_rate": args.lr,

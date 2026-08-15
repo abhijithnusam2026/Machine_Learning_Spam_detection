@@ -2,6 +2,13 @@ import os
 import time
 import json
 import itertools
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 import dagshub

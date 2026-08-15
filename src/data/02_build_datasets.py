@@ -4,6 +4,13 @@ import random
 import re
 import glob
 import zipfile
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import pandas as pd
 import mlflow
 import dagshub
@@ -75,6 +82,9 @@ def main():
             zipf.extractall("data/raw/teeconnie/")
     
     teeconnie_files = glob.glob("data/raw/teeconnie/**/*", recursive=True)
+    # The composite and synthetic written corpora are already scam-heavy.
+    # Teeconnie is intentionally used as legitimate-call augmentation only,
+    # so ModernBERT gains benign call variety without increasing positive-class skew.
     nonscam_txt = [f for f in teeconnie_files if f.lower().endswith(".txt") and "non" in f.lower() and "scam" in f.lower()]
     
     entries = []
@@ -101,10 +111,25 @@ def main():
     
     # 4. Load Raw ASR Transcripts
     print("Processing Raw ASR Transcripts...")
-    asr_path = "data/raw/asr/raw_asr_transcripts.csv"
-    df_asr = pd.read_csv(asr_path) if os.path.exists(asr_path) else pd.DataFrame()
+    asr_paths = sorted(glob.glob("data/raw/asr/*.csv"))
+    asr_frames = []
+    for asr_path in asr_paths:
+        frame = pd.read_csv(asr_path)
+        if "source" in frame.columns and "source_dataset" not in frame.columns:
+            frame = frame.rename(columns={"source": "source_dataset"})
+        asr_frames.append(frame)
+    df_asr = pd.concat(asr_frames, ignore_index=True) if asr_frames else pd.DataFrame()
+    if df_asr.empty:
+        raise RuntimeError(
+            "Required ASR transcript sources are missing or empty under data/raw/asr/*.csv. "
+            "Run src/data/00_download_raw_data.py after fixing the DagsHub artifact path before building datasets."
+        )
+    missing_asr_columns = {"text", "label"} - set(df_asr.columns)
+    if missing_asr_columns:
+        raise RuntimeError(f"ASR transcript sources are missing required columns: {sorted(missing_asr_columns)}")
     df_asr["source_domain"] = "spoken_asr"
-    df_asr["source_dataset"] = "asr_transcripts"
+    if "source_dataset" not in df_asr.columns:
+        df_asr["source_dataset"] = "asr_transcripts"
     
     # Combine ALL sources
     print("\nAssembling massive canonical dataset...")

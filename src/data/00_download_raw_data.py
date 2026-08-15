@@ -1,4 +1,11 @@
 import os
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import dagshub
 import mlflow
 import pandas as pd
@@ -11,10 +18,13 @@ def download_file(s3_client, repo_name, s3_key, local_path):
         try:
             print(f"Downloading {s3_key} to {local_path}...")
             s3_client.download_file(repo_name, s3_key, local_path)
+            return True
         except Exception as e:
             print(f"Failed to download {s3_key}: {e}")
+            return False
     else:
         print(f"File {local_path} already exists. Skipping download.")
+        return True
 
 def main():
     load_dotenv()
@@ -37,34 +47,46 @@ def main():
         # Legacy Kaggle Composite (Enron, SMS, Phishing)
         ("data/legacy_composite/composite_train.csv", "data/raw/legacy_composite/composite_train.csv"),
         ("data/legacy_composite/composite_test.csv", "data/raw/legacy_composite/composite_test.csv"),
-        # Raw ASR Transcripts (Phase 2 foundation)
-        ("data/phase2_asr/raw_asr_transcripts.csv", "data/raw/asr/raw_asr_transcripts.csv")
+        # Labeled ASR transcript corpus (Phase 2 foundation), re-partitioned by 02_build_datasets.py
+        ("data/phase2_asr/train.csv", "data/raw/asr/phase2_train.csv"),
+        ("data/phase2_asr/val.csv", "data/raw/asr/phase2_val.csv"),
+        ("data/phase2_asr/test.csv", "data/raw/asr/phase2_test.csv"),
     ]
 
     print("--- Downloading Foundational Raw Datasets from DagsHub ---")
-    
+
+    source_rows = []
+    for s3_key, local_path in raw_datasets:
+        download_file(s3_client, repo_name, s3_key, local_path)
+        exists = os.path.exists(local_path)
+        size_mb = os.path.getsize(local_path) / (1024 * 1024) if exists else 0.0
+        source_rows.append(
+            {
+                "s3_key": s3_key,
+                "local_path": local_path,
+                "downloaded": exists,
+                "size_mb": size_mb,
+            }
+        )
+
+    missing_sources = [row for row in source_rows if not row["downloaded"]]
+    if missing_sources:
+        missing_list = "\n".join(f"  - {row['s3_key']} -> {row['local_path']}" for row in missing_sources)
+        raise RuntimeError(
+            "Required raw data sources are missing from DagsHub. "
+            "Stopping before dataset processing or MLflow logging to avoid silent source-domain loss.\n"
+            f"{missing_list}"
+        )
+
     dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
     mlflow.set_experiment("scam-detection/refactored_pipeline/00_download_raw_data")
-    
+
     with mlflow.start_run(run_name="download_raw_data"):
         mlflow.set_tag("project_stage", "refactored_pipeline")
         mlflow.set_tag("pipeline_stage", "00_download_raw_data")
         mlflow.log_param("source_storage", "DagsHub repo bucket")
-        source_rows = []
-        for s3_key, local_path in raw_datasets:
-            download_file(s3_client, repo_name, s3_key, local_path)
-            exists = os.path.exists(local_path)
-            size_mb = os.path.getsize(local_path) / (1024 * 1024) if exists else 0.0
-            source_rows.append(
-                {
-                    "s3_key": s3_key,
-                    "local_path": local_path,
-                    "downloaded": exists,
-                    "size_mb": size_mb,
-                }
-            )
-            if os.path.exists(local_path):
-                mlflow.log_artifact(local_path, artifact_path=os.path.dirname(local_path).replace("data/", ""))
+        for row in source_rows:
+            mlflow.log_artifact(row["local_path"], artifact_path=os.path.dirname(row["local_path"]).replace("data/", ""))
         log_dataframe_artifact(pd.DataFrame(source_rows), "raw_source_manifest.csv", "raw_manifest")
         mlflow.log_metric("raw_sources_expected", len(raw_datasets))
         mlflow.log_metric("raw_sources_available", sum(1 for row in source_rows if row["downloaded"]))
