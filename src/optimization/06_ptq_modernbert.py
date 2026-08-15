@@ -71,6 +71,26 @@ def download_from_dagshub(remote_path, local_path):
         print(f"  [WARN] Could not download {remote_path}: {e}")
         return False
 
+def ensure_gguf_classifier_head(local_path="models/gguf/gguf_classifier_head.joblib"):
+    if os.path.exists(local_path):
+        return local_path
+
+    remote_candidates = [
+        local_path,
+        f"artifacts/{STAGE_NAME}/gguf/gguf_classifier_head.joblib",
+        "artifacts/feature/phase-2-audio-asr/gguf/gguf_classifier_head.joblib",
+        "artifacts/feature/phase-3.5-benchmark/gguf_classifier_head.joblib",
+        "artifacts/feature/phase-3.5-benchmark/gguf/gguf_classifier_head.joblib",
+    ]
+    for remote_path in remote_candidates:
+        if download_from_dagshub(remote_path, local_path):
+            return local_path
+
+    raise RuntimeError(
+        "GGUF classification head is required for PTQ evaluation. "
+        f"Expected local path {local_path}; tried DagsHub keys: {remote_candidates}."
+    )
+
 def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="models/gguf_classifier", stage=STAGE_NAME):
     print(f"\n--- Exporting Classifier ({model_name}) to GGUF ---")
     os.makedirs(output_dir, exist_ok=True)
@@ -297,12 +317,7 @@ def evaluate_ptq_degradation(stage, eval_data="data/processed/global_test.csv", 
         dagshub.init(repo_name=repo_name, repo_owner=repo_owner, mlflow=True)
         mlflow.set_experiment("scam-detection/refactored_pipeline/06_ptq_modernbert")
         
-    head_path = "models/gguf/gguf_classifier_head.joblib"
-    if not os.path.exists(head_path):
-        raise RuntimeError(
-            "GGUF classification head is required for PTQ evaluation. "
-            f"Expected {head_path}."
-        )
+    head_path = ensure_gguf_classifier_head()
 
     import joblib
     gguf_head = joblib.load(head_path)

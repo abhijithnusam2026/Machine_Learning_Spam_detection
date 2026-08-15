@@ -83,7 +83,16 @@ class InferencePipeline:
         head_path = self.config.get("gguf_classifier_head_path", "models/gguf/gguf_classifier_head.joblib")
         if not os.path.exists(head_path):
             print(f"Downloading {head_path} from DagsHub...")
-            self._download_from_dagshub(head_path)
+            self._download_from_dagshub_any(
+                [
+                    head_path,
+                    "artifacts/06_ptq_modernbert/gguf/gguf_classifier_head.joblib",
+                    "artifacts/feature/phase-2-audio-asr/gguf/gguf_classifier_head.joblib",
+                    "artifacts/feature/phase-3.5-benchmark/gguf_classifier_head.joblib",
+                    "artifacts/feature/phase-3.5-benchmark/gguf/gguf_classifier_head.joblib",
+                ],
+                head_path,
+            )
         if not os.path.exists(head_path):
             raise RuntimeError(
                 "CRITICAL ERROR: GGUF Classification Head not found. "
@@ -121,6 +130,31 @@ class InferencePipeline:
         s3 = dagshub.get_repo_bucket_client(f"{owner}/{name}")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         s3.download_file(name, file_path, file_path)
+
+    def _download_from_dagshub_any(self, remote_paths, local_path):
+        import dagshub
+        from dotenv import load_dotenv
+        load_dotenv()
+        owner = os.getenv("DAGSHUB_REPO_OWNER", "kureeltanishq")
+        name = os.getenv("DAGSHUB_REPO_NAME", "2026SU_MS_DSP_422-DL_SEC61_Machine_Learning_Spam_detection")
+        token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+
+        if token:
+            dagshub.auth.add_app_token(token)
+
+        s3 = dagshub.get_repo_bucket_client(f"{owner}/{name}")
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        last_error = None
+        for remote_path in remote_paths:
+            try:
+                s3.download_file(name, remote_path, local_path)
+                return
+            except Exception as exc:
+                last_error = exc
+        raise FileNotFoundError(
+            f"Could not download {local_path} from any known DagsHub path. "
+            f"Tried {remote_paths}. Last error: {last_error}"
+        )
 
     def process_audio(self, audio_file):
         metrics = {}
