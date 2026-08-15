@@ -45,9 +45,7 @@ image = (
 )
 @modal.asgi_app()
 def fastapi_app():
-    # Force the backend to FP16 since we have a GPU
-    os.environ["INFERENCE_BACKEND"] = "fp16"
-    
+    # We rely on configs/inference_config.json for the backend selection.
     # We must import our api_server AFTER setting environment variables
     # We also have to do this locally inside the function so it executes inside the container
     import api_server

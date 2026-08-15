@@ -3,15 +3,11 @@ import json
 import gradio as gr
 from dotenv import load_dotenv
 
-# Force GGUF backend for Hugging Face Spaces (CPU Inference)
+# We rely on configs/inference_config.json for the backend selection.
 config_path = "configs/inference_config.json"
 if os.path.exists(config_path):
     with open(config_path, "r") as f:
         config = json.load(f)
-    if config.get("backend") != "gguf":
-        config["backend"] = "gguf"
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=4)
 
 # Load pipeline (will auto-download models from DagsHub if DagsHub secrets are set in HF Spaces)
 print("Initializing CPU (GGUF) Inference Pipeline...")

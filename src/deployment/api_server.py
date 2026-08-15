@@ -8,15 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
 
-# Force backend to fp16 for the API server
+# We rely on configs/inference_config.json for the backend selection.
 config_path = "configs/inference_config.json"
 if os.path.exists(config_path):
     with open(config_path, "r") as f:
         config = json.load(f)
-    if config.get("backend") != "fp16":
-        config["backend"] = "fp16"
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=4)
 
 # MLflow DagsHub Authentication
 from dotenv import load_dotenv
