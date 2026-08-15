@@ -39,6 +39,8 @@ def run_benchmark(backend_name, audio_dir="data/large_audio_test"):
     files = [f for f in os.listdir(audio_dir) if f.endswith(".wav")]
     files.sort()
     
+    assert len(files) > 0, f"CRITICAL ERROR: No .wav files found in {audio_dir}. Benchmark failed!"
+    
     manifest_path = os.path.join(audio_dir, "manifest.csv")
     manifest = pd.read_csv(manifest_path) if os.path.exists(manifest_path) else None
     
@@ -133,27 +135,27 @@ def main():
         print("Fetching test artifacts from DagsHub...")
         s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
         local_audio_dir = "data/large_audio_test"
-        if not os.path.exists(local_audio_dir):
-            os.makedirs(local_audio_dir, exist_ok=True)
-            # Assuming manifest exists in the bucket; script will gracefully skip missing files
-            try:
-                s3_client.download_file(repo_name, "data/large_audio_test/manifest.csv", f"{local_audio_dir}/manifest.csv")
-                
-                # Now download the actual audio files listed in the manifest
-                manifest_df = pd.read_csv(f"{local_audio_dir}/manifest.csv")
-                for _, row in manifest_df.iterrows():
-                    audio_filename = os.path.basename(row['file'])
-                    remote_audio_path = f"data/large_audio_test/{audio_filename}"
-                    local_audio_path = f"{local_audio_dir}/{audio_filename}"
-                    if not os.path.exists(local_audio_path):
-                        print(f"Downloading {audio_filename}...")
-                        try:
-                            s3_client.download_file(repo_name, remote_audio_path, local_audio_path)
-                        except Exception as inner_e:
-                            print(f"Failed to fetch {audio_filename}: {inner_e}")
-                            
-            except Exception as e:
-                print(f"Failed to fetch manifest or audio files: {e}")
+        os.makedirs(local_audio_dir, exist_ok=True)
+        
+        # We unconditionally attempt to fetch the manifest and any missing audio files
+        try:
+            s3_client.download_file(repo_name, "data/large_audio_test/manifest.csv", f"{local_audio_dir}/manifest.csv")
+            
+            # Now download the actual audio files listed in the manifest
+            manifest_df = pd.read_csv(f"{local_audio_dir}/manifest.csv")
+            for _, row in manifest_df.iterrows():
+                audio_filename = os.path.basename(row['file'])
+                remote_audio_path = f"data/large_audio_test/{audio_filename}"
+                local_audio_path = f"{local_audio_dir}/{audio_filename}"
+                if not os.path.exists(local_audio_path):
+                    print(f"Downloading {audio_filename}...")
+                    try:
+                        s3_client.download_file(repo_name, remote_audio_path, local_audio_path)
+                    except Exception as inner_e:
+                        print(f"Failed to fetch {audio_filename}: {inner_e}")
+                        
+        except Exception as e:
+            print(f"Failed to fetch manifest or audio files: {e}")
         
         # Backends to benchmark
         backends = ["fp16", "gguf", "gguf_pruned"]

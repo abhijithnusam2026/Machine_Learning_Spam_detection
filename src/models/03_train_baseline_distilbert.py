@@ -141,9 +141,9 @@ def main():
     train_df = pd.read_csv(args.train_data)
     test_df = pd.read_csv(args.test_data)
     
-    # Baseline uses ALL written text data
-    train_df = train_df[(train_df["source_domain"] == "written_text")]
-    test_df = test_df[(test_df["source_domain"] == "written_text")]
+    # Baseline (Phase 1) uses written text data but EXCLUDES Phase 1.5 Synthetic LLM data
+    train_df = train_df[(train_df["source_domain"] == "written_text") & (train_df["source_dataset"] != "synthetic")]
+    test_df = test_df[(test_df["source_domain"] == "written_text") & (test_df["source_dataset"] != "synthetic")]
     
     assert "text" in train_df.columns and "label" in train_df.columns, "Train CSV must have 'text' and 'label' columns"
     assert "text" in test_df.columns and "label" in test_df.columns, "Test CSV must have 'text' and 'label' columns"
