@@ -1,20 +1,24 @@
-.PHONY: download preprocess baseline train all
+.PHONY: data train-distilbert train-modernbert train-transcript quantize evaluate all
 
-# Download raw data from Kaggle (idempotent if metadata.json exists)
-data/raw/metadata.json:
-	python scripts/download.py
+data:
+	python src/data/00_download_data.py
+	python src/data/02_build_datasets.py
 
-# Preprocess the data (depends on download)
-data/processed/composite_train.csv data/processed/composite_test.csv: data/raw/metadata.json scripts/preprocess.py
-	python scripts/preprocess.py
+train-distilbert: data
+	python src/models/03_train_baseline_distilbert.py
 
-# Run the classical ML baselines
-baseline: data/processed/composite_train.csv data/processed/composite_test.csv
-	python scripts/train_baseline.py --train_data data/processed/composite_train.csv --test_data data/processed/composite_test.csv
+train-modernbert: data
+	python src/models/04_train_universal_modernbert.py
 
-# Run the deep learning DistilBERT training
-train: data/processed/composite_train.csv data/processed/composite_test.csv
-	python scripts/train_scam_classifier.py --train_data data/processed/composite_train.csv --test_data data/processed/composite_test.csv
+train-transcript: train-modernbert
+	python src/models/05_retrain_transcript_modernbert.py
 
-# Run the entire pipeline in order
-all: baseline train
+quantize: train-transcript
+	python src/optimization/06_export_and_quantize_gguf.py
+	python src/optimization/07_quantize_whisper.py
+
+evaluate: quantize
+	python src/evaluation/08_evaluate_all_models.py
+
+all:
+	bash run_pipeline.sh

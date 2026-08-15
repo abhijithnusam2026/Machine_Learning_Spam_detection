@@ -24,22 +24,22 @@ def main():
 
     s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
     
-    datasets_to_download = [
-        # Phase 1 & 1.5 Text Data
-        ("data/phase1.5/train.csv", "data/raw/phase1.5/train.csv"),
-        ("data/phase1.5/val.csv", "data/raw/phase1.5/val.csv"),
-        ("data/phase1.5/test.csv", "data/raw/phase1.5/test.csv"),
-        # Phase 2 ASR Data
-        ("data/phase2_asr/raw_asr_transcripts.csv", "data/raw/phase2_asr/raw_asr_transcripts.csv"),
-        ("data/phase2_asr/train.csv", "data/raw/phase2_asr/train.csv"),
-        ("data/phase2_asr/val.csv", "data/raw/phase2_asr/val.csv"),
-        ("data/phase2_asr/test.csv", "data/raw/phase2_asr/test.csv"),
-        # Collated EDA Data
-        ("data/collated_for_eda/collated_data.csv", "data/raw/collated/collated_data.csv")
+    # We download ONLY the absolute foundational raw sources.
+    raw_datasets = [
+        # LLM Synthetic JSONs
+        ("data/raw_jsons/scam_call_hard_examples_250.json", "data/raw_jsons/scam_call_hard_examples_250.json"),
+        ("data/raw_jsons/scam_call_transcripts_250_combined.json", "data/raw_jsons/scam_call_transcripts_250_combined.json"),
+        # Teeconnie Dataset Zip
+        ("data/raw_teeconnie/teeconnie_dataset.zip", "data/raw_teeconnie/teeconnie_dataset.zip"),
+        # Legacy Kaggle Composite (Enron, SMS, Phishing)
+        ("data/legacy_composite/composite_train.csv", "data/legacy_composite/composite_train.csv"),
+        ("data/legacy_composite/composite_test.csv", "data/legacy_composite/composite_test.csv"),
+        # Raw ASR Transcripts (Phase 2 foundation)
+        ("data/phase2_asr/raw_asr_transcripts.csv", "data/raw_asr/raw_asr_transcripts.csv")
     ]
 
-    print("--- Downloading Raw Datasets from DagsHub ---")
-    for s3_key, local_path in datasets_to_download:
+    print("--- Downloading Foundational Raw Datasets from DagsHub ---")
+    for s3_key, local_path in raw_datasets:
         download_file(s3_client, repo_name, s3_key, local_path)
         
     print("Download complete.")

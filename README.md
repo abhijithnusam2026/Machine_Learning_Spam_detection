@@ -6,69 +6,61 @@ colorTo: purple
 sdk: gradio
 sdk_version: "4.44.1"
 python_version: 3.10.13
-app_file: app.py
+app_file: src/deployment/app.py
 pinned: false
 ---
 
-# Scam Alert System (DistilBERT Fine-Tuning)
+# Scam Detection AI - Unified Modular Pipeline
 
-An end-to-end Machine Learning pipeline for automated scam transcript detection. This project utilizes lightweight NLP models (DistilBERT) for rapid, domain-specific inference.
+An end-to-end Machine Learning pipeline for automated scam transcript detection. This project utilizes DistilBERT as a baseline and scales up to ModernBERT with long-context awareness, specifically fine-tuned on diverse text and ASR transcripts.
 
-## Objective
+## 🚀 The Unified Architecture
 
-Detect malicious or fraudulent intents in call transcripts and messages. Pre-trained models (like `facebook/bart-large-mnli`) lack domain-specific vocabulary and struggle with Domain Mismatch Leakage, making them computationally heavy and easily fooled by adversarial keyword stuffing.
+The entire codebase has been refactored into a clean, modular structure under the `src/` directory.
 
-By fine-tuning **DistilBERT** (`distilbert-base-uncased`), we achieve:
-1. **99.8% Test Set Accuracy** (F1: 99.8%, PR-AUC: 99.9%).
-2. Deep contextual understanding that defeats simple keyword stuffing.
-3. Sub-50ms inference latency, making it ideal for edge deployment.
+### 1. Data Ingestion (`src/data/`)
+Downloads raw sources (Kaggle Phishing/Enron/SMS datasets, Teeconnie data, synthetic LLM JSONs, and raw ASR transcripts). A 20% **Global Hold-Out Set** is deterministically carved out and frozen *before* any modeling occurs, guaranteeing zero leakage.
 
-*(See `notebooks/04_fine_tuning_justification.ipynb` for empirical and visual comparisons between baseline and fine-tuned models).*
+### 2. Model Training (`src/models/`)
+- **Baseline**: DistilBERT on written text.
+- **Universal**: ModernBERT on written text.
+- **Transcript Retraining**: ModernBERT fine-tuned exclusively on ASR spoken transcripts.
 
-## Data Pipeline
+### 3. Optimization (`src/optimization/`)
+Converts the final PyTorch ModernBERT model into highly optimized **GGUF** quantized formats (FP16, Q8_0, Q4_K_M) via `llama.cpp` and fetches corresponding Whisper variants for local edge deployment.
 
-1. **Download**: Raw composite datasets are pulled idempotently via `scripts/download.py`.
-2. **Preprocess**: Text is strictly deduplicated, stripped of leaky quote artifacts, and heuristically audited for label noise via `scripts/preprocess.py`.
-3. **Baseline**: Classical ML models (TF-IDF + Logistic Regression / LightGBM) are trained as a benchmark via `scripts/train_baseline.py`.
-4. **Fine-Tuning**: DistilBERT is trained with FP16 mixed-precision and strict random seeding via `scripts/train_scam_classifier.py`.
+### 4. Evaluation & Benchmarking (`src/evaluation/`)
+Runs all models and optimized E2E pipelines (Whisper + Classifier) against the Global Hold-Out Set, logging inference latency, model sizing, and confusion matrices directly to isolated DagsHub MLflow experiments.
 
 ---
 
-## Reproducibility & Orchestration (Makefile + Docker)
+## 🛠️ Quickstart & Reproducibility
 
-To guarantee exact reproducibility, this repository uses a `Makefile` and a frozen `requirements.lock.txt`.
+### Environment Setup
+1. Clone the repo and checkout the `refactor/unified-pipeline` branch.
+2. Install the locked dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Set your `.env` variables (DagsHub credentials for MLflow logging & HuggingFace token):
+   ```
+   DAGSHUB_REPO_OWNER="your-owner"
+   DAGSHUB_REPO_NAME="your-repo"
+   MLFLOW_TRACKING_USERNAME="..."
+   MLFLOW_TRACKING_PASSWORD="..."
+   ```
 
-### Method 1: The Docker Container (Best for Environment Portability)
-We provide a `python:3.11-slim` Docker container. 
-> ⚠️ **WARNING:** Docker on macOS does not have access to the Apple GPU. Running the training step inside Docker will be extremely slow (CPU-only).
-```bash
-docker build -t scam-alert .
-docker run -it scam-alert
-```
+### Run the Pipeline
+To execute the canonical journey from raw data download all the way to final benchmarking:
 
-### Method 2: Native Execution (Best for Kaggle GPUs & Mac MPS)
-If you run this natively in a Kaggle notebook or on a Mac, the scripts will automatically utilize **Nvidia T4 GPUs** (via DataParallel) or **Apple Silicon GPUs** (via MPS).
-
-**1. Setup Environment**
-Ensure your `.env` contains your Hugging Face token with Write permissions.
-```bash
-HF_TOKEN="hf_..."
-```
-
-**2. Run the Entire Pipeline**
-Use the `Makefile` to automatically orchestrate the download, preprocessing, baselines, and DistilBERT training in the correct order:
 ```bash
 make all
+# OR
+bash run_pipeline.sh
 ```
 
-*(Alternatively, run individual steps: `make download`, `make preprocess`, `make baseline`, `make train`)*
-
----
-
-## Live Inference API
-
-Once the model is saved to `./scam-classifier-model`, you can spin up the FastAPI server to test it in real-time.
+### Live Deployment
+The Gradio App and FastAPI inference servers are located in `src/deployment/`.
 ```bash
-uvicorn src.serving.app:app --reload
+python src/deployment/api_server.py
 ```
-Navigate to `http://127.0.0.1:8000/docs` to use the interactive Swagger UI and send custom text to the `/detect-scam` endpoint!
