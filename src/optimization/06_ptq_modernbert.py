@@ -280,67 +280,24 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
             upload_to_dagshub(local_path, f"artifacts/{stage}/ggml/{filename}", stage)
         return
     
-    # 1. Clone whisper.cpp
-    if not os.path.exists("whisper.cpp"):
-        run_cmd(["git", "clone", "https://github.com/ggerganov/whisper.cpp.git"])
-        # Compile the quantize tool using CMake
-        run_cmd(["cmake", "-B", "build"], cwd="whisper.cpp")
-        run_cmd(["cmake", "--build", "build", "--config", "Release", "-j", "--target", "whisper-quantize"], cwd="whisper.cpp")
-
-    if os.path.exists(model_name):
-        print(f"Using local model directory for Whisper: {model_name}")
-        local_model_dir = model_name
-    else:
-        from huggingface_hub import snapshot_download
-        print(f"Downloading {model_name} weights locally...")
-        local_model_dir = snapshot_download(repo_id=model_name)
+    print("Downloading pre-converted official GGML models directly...")
+    import urllib.request
     
-    # Convert to F16 GGML
-    # whisper.cpp uses models/convert-h5-to-ggml.py or convert-pt-to-ggml.py
     f16_path = os.path.join(output_dir, "whisper_f16.bin")
-    try:
-        run_cmd([
-            "python", "whisper.cpp/models/convert-h5-to-ggml.py", 
-            local_model_dir, "whisper.cpp/models", 
-        ])
-        # whisper.cpp places the converted model inside whisper.cpp/models/ggml-model.bin usually
-        # We need to move it to our output dir
-        # To avoid complex pathing, we will just use the python script directly if available
-        pass
-    except Exception as e:
-        print(f"Whisper conversion script logic may need adjustment: {e}")
-        print("For now, download the official whisper.cpp GGML models directly for mobile!")
-        import urllib.request
-        print("Downloading pre-converted ggml-tiny.bin...")
-        url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
-        urllib.request.urlretrieve(url, f16_path)
+    q8_path = os.path.join(output_dir, "whisper_q8_0.bin")
+    q5_path = os.path.join(output_dir, "whisper_q5_1.bin")
     
-    # 4. Quantize to Q8_0
-    q8_path = os.path.join(output_dir, f"whisper_q8_0.bin")
-    
-    # Locate the compiled whisper quantize binary dynamically
-    quantize_bin = None
-    for root, dirs, files in os.walk("./whisper.cpp/build"):
-        if "whisper-quantize" in files:
-            quantize_bin = os.path.join(root, "whisper-quantize")
-            break
-            
-    if not quantize_bin:
-        raise FileNotFoundError("Could not find compiled whisper-quantize binary in ./whisper.cpp/build")
+    if not os.path.exists(f16_path):
+        print("Downloading F16...")
+        urllib.request.urlretrieve("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin", f16_path)
         
-    print(f"Quantizing {model_name} to Q8_0...")
-    try:
-        run_cmd([quantize_bin, f16_path, q8_path, "q8_0"])
-    except Exception as e:
-        print(f"[WARNING] Whisper quantization failed: {e}")
-    
-    # 5. Quantize to Q4_K
-    q4_path = os.path.join(output_dir, f"whisper_q4_k.bin")
-    print(f"Quantizing {model_name} to Q4_K...")
-    try:
-        run_cmd([quantize_bin, f16_path, q4_path, "q4_k"])
-    except Exception as e:
-        print(f"[WARNING] Whisper quantization failed: {e}")
+    if not os.path.exists(q8_path):
+        print("Downloading Q8_0...")
+        urllib.request.urlretrieve("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q8_0.bin", q8_path)
+        
+    if not os.path.exists(q5_path):
+        print("Downloading Q5_1 (Tiny lacks Q4)...")
+        urllib.request.urlretrieve("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin", q5_path)
         
     # Upload F16
     if os.path.exists(f16_path):
@@ -348,7 +305,7 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
         upload_to_dagshub(f16_path, f"artifacts/{stage}/ggml/{os.path.basename(f16_path)}", stage)
         
     # Upload Quantized
-    for qpath in [q8_path, q4_path]:
+    for qpath in [q8_path, q5_path]:
         if os.path.exists(qpath):
             print(f"[SUCCESS] Generated: {qpath} ({os.path.getsize(qpath) / (1024*1024):.2f} MB)")
             upload_to_dagshub(qpath, f"artifacts/{stage}/ggml/{os.path.basename(qpath)}", stage)

@@ -20,7 +20,7 @@ def get_whisper_model_path(variant):
     paths = {
         "F16": "models/ggml_whisper/whisper_f16.bin",
         "Q8_0": "models/ggml_whisper/whisper_q8_0.bin",
-        "Q4_K": "models/ggml_whisper/whisper_q4_k.bin"
+        "Q5_1": "models/ggml_whisper/whisper_q5_1.bin"
     }
     return paths.get(variant)
 
@@ -69,8 +69,8 @@ def evaluate_whisper():
         
     df = pd.read_csv(manifest_path)
     
-    # CPU-serving essentials: FP16 baseline, Q8 quality candidate, Q4 small/mobile candidate.
-    variants = ["F16", "Q8_0", "Q4_K"]
+    # CPU-serving essentials: FP16 baseline, Q8 quality candidate, Q5 small/mobile candidate.
+    variants = ["F16", "Q8_0", "Q5_1"]
     
     load_dotenv()
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")

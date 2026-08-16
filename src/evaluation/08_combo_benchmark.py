@@ -55,7 +55,7 @@ def evaluate_combinations():
     whisper_paths = {
         "fp16": "openai/whisper-tiny.en",
         "q8_0": "models/ggml_whisper/whisper_q8_0.bin",
-        "q4_k": "models/ggml_whisper/whisper_q4_k.bin",
+        "q5_1": "models/ggml_whisper/whisper_q5_1.bin",
     }
 
     # Keep the CPU deployment matrix intentionally small:
@@ -63,8 +63,8 @@ def evaluate_combinations():
     combinations = [
         ("fp16", "fp16"),
         ("gguf_q8", "q8_0"),
-        ("gguf_q8", "q4_k"),
-        ("gguf_q4", "q4_k"),
+        ("gguf_q8", "q5_1"),
+        ("gguf_q4", "q5_1"),
     ]
     
     load_dotenv()
