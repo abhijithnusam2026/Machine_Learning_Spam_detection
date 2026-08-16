@@ -1,10 +1,6 @@
 import os
 import json
 import time
-import subprocess
-import wave
-import contextlib
-import tempfile
 import numpy as np
 
 class InferencePipeline:
@@ -112,8 +108,6 @@ class InferencePipeline:
         self.gguf_head = joblib.load(head_path)
 
     def _init_gguf_asr(self):
-        import subprocess
-        # For ASR (GGML), we will use whisper.cpp binary via subprocess
         self.whisper_model_path = self.config['asr_model_path']
         if not os.path.exists(self.whisper_model_path):
             print(f"Downloading {self.whisper_model_path} from DagsHub...")
@@ -126,12 +120,27 @@ class InferencePipeline:
                     "artifacts/feature/phase-2-audio-asr/ggml",
                 ],
             )
-            
-        # Ensure whisper.cpp is compiled
-        if not os.path.exists("./whisper.cpp/main"):
-            print("whisper.cpp not compiled. Compiling now...")
-            subprocess.run(["git", "clone", "https://github.com/ggerganov/whisper.cpp.git"], check=False)
-            subprocess.run(["make"], cwd="./whisper.cpp", check=True)
+
+        try:
+            from pywhispercpp.model import Model
+        except ImportError as exc:
+            raise RuntimeError(
+                "GGUF/GGML ASR requires pywhispercpp in the Hugging Face runtime. "
+                "Install pywhispercpp==1.2.0 or use the Docker build."
+            ) from exc
+
+        n_threads = max(1, min(os.cpu_count() or 2, 4))
+        print(
+            f"Loading GGML Whisper ASR via pywhispercpp: {self.whisper_model_path} "
+            f"({n_threads} thread(s))",
+            flush=True,
+        )
+        self.whisper_model = Model(
+            self.whisper_model_path,
+            n_threads=n_threads,
+            print_realtime=False,
+            print_progress=False,
+        )
 
     def _download_from_dagshub(self, file_path):
         import boto3
@@ -238,70 +247,18 @@ class InferencePipeline:
             result = self.asr_pipe(audio_file)
             return result["text"].strip()
         else:
-            # GGUF uses whisper.cpp binary. It requires 16kHz wav.
-            temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
-            ffmpeg_result = subprocess.run([
-                "ffmpeg", "-y", "-i", audio_file, 
-                "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", temp_wav
-            ], capture_output=True, text=True)
-            if ffmpeg_result.returncode != 0:
-                raise RuntimeError(f"ffmpeg audio conversion failed: {ffmpeg_result.stderr[-1000:]}")
-            
-            # Find the binary
-            possible_paths = [
-                "./whisper.cpp/build/bin/whisper-cli",
-                "./whisper.cpp/build/bin/main",
-                "./whisper.cpp/bin/whisper-cli",
-                "./whisper.cpp/bin/main",
-                "./whisper.cpp/whisper-cli",
-                "./whisper.cpp/main"
-            ]
-            whisper_bin = None
-            for p in possible_paths:
-                if os.path.exists(p):
-                    whisper_bin = p
-                    break
-            
-            if not whisper_bin:
-                raise FileNotFoundError("Could not locate compiled whisper-cli or main binary in whisper.cpp directory")
-
-            out_base = tempfile.NamedTemporaryFile(prefix="whisper_transcript_", delete=True).name
-            out_txt = f"{out_base}.txt"
-            cmd = [
-                whisper_bin,
-                "-m", self.whisper_model_path,
-                "-f", temp_wav,
-                "-nt",
-                "-otxt",
-                "-of", out_base,
-            ]
-            print(f"[ASR] Running whisper.cpp: {' '.join(cmd)}", flush=True)
-            result = subprocess.run(cmd, capture_output=True, text=True)
-
-            transcript = ""
-            if os.path.exists(out_txt):
-                with open(out_txt, "r", encoding="utf-8") as f:
-                    transcript = f.read().strip()
-                os.remove(out_txt)
+            segments = self.whisper_model.transcribe(audio_file, new_segment_callback=None)
+            transcript_parts = []
+            for segment in segments:
+                text = getattr(segment, "text", None)
+                if text is None and isinstance(segment, dict):
+                    text = segment.get("text")
+                if text:
+                    transcript_parts.append(str(text).strip())
+            transcript = " ".join(transcript_parts).strip()
 
             if not transcript:
-                transcript = result.stdout.strip()
-
-            try:
-                os.remove(temp_wav)
-            except OSError:
-                pass
-
-            if result.returncode != 0:
-                raise RuntimeError(f"whisper.cpp failed: {result.stderr[-1500:]}")
-
-            if not transcript:
-                error_msg = (
-                    f"Whisper ASR returned an empty transcript.\n"
-                    f"Exit code: {result.returncode}\n"
-                    f"STDOUT: {result.stdout[-1000:]!r}\n"
-                    f"STDERR: {result.stderr[-1500:]!r}"
-                )
+                error_msg = "Whisper ASR returned an empty transcript."
                 print(f"[ASR ERROR] {error_msg}", flush=True)
                 raise RuntimeError(error_msg)
 
