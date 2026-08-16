@@ -184,6 +184,38 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
     print(f"\n--- Exporting Classifier ({model_name}) to GGUF ---")
     os.makedirs(output_dir, exist_ok=True)
     
+    required_models = {
+        "classifier_f16.gguf": os.path.join(output_dir, "classifier_f16.gguf"),
+        "classifier_q8_0.gguf": os.path.join(output_dir, "classifier_q8_0.gguf"),
+        "classifier_q4_k_m.gguf": os.path.join(output_dir, "classifier_q4_k_m.gguf"),
+    }
+    
+    if all(os.path.exists(path) for path in required_models.values()):
+        print("Classifier GGUF artifacts already exist locally. Skipping export.")
+        return
+
+    remote_prefixes = [
+        f"artifacts/refactored_pipeline/{stage}/gguf",
+        f"artifacts/{stage}/gguf",
+    ]
+    fetched_all = True
+    for filename, local_path in required_models.items():
+        if os.path.exists(local_path):
+            continue
+        fetched = False
+        for prefix in remote_prefixes:
+            if download_from_dagshub(f"{prefix}/{filename}", local_path):
+                fetched = True
+                break
+        if not fetched:
+            fetched_all = False
+
+    if fetched_all and all(os.path.exists(path) for path in required_models.values()):
+        print("Classifier GGUF artifacts resolved from DagsHub.")
+        for filename, local_path in required_models.items():
+            print(f"[SUCCESS] Available: {local_path} ({os.path.getsize(local_path) / (1024*1024):.2f} MB)")
+        return
+    
     # Clone llama.cpp if not exists
     if not os.path.exists("llama.cpp"):
         run_cmd(["git", "clone", "https://github.com/ggerganov/llama.cpp.git"])
