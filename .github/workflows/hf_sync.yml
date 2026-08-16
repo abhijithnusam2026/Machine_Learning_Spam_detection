@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       huggingface_repo_id:
-        description: "Target Hugging Face Space repo, for example tanu011235/scam_detection_cpu_q8_staging"
+        description: "Target Hugging Face Space repo"
         required: true
         default: "tanu011235/scam_detection_cpu_q8_staging"
 
@@ -16,6 +16,7 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
+
       - uses: huggingface/hub-sync@v0.1.0
         with:
           github_repo_id: ${{ github.repository }}
