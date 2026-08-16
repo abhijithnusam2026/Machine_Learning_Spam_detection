@@ -127,7 +127,7 @@ def train_gguf_classifier_head(
             train_df = train_df.sample(n=train_rows, random_state=42)
 
     from llama_cpp import Llama
-    from sklearn.linear_model import LogisticRegression
+    from sklearn.neural_network import MLPClassifier
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
     import joblib
@@ -141,8 +141,20 @@ def train_gguf_classifier_head(
 
     head = make_pipeline(
         StandardScaler(),
-        LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42),
+        MLPClassifier(
+            hidden_layer_sizes=(256, 128),
+            activation='relu',
+            solver='adam',
+            alpha=0.0001,
+            batch_size='auto',
+            learning_rate='adaptive',
+            max_iter=2000,
+            early_stopping=True,
+            validation_fraction=0.1,
+            random_state=42
+        )
     )
+    print("Fitting MLP Neural Network head...")
     head.fit(embeddings, labels)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -159,7 +171,7 @@ def train_gguf_classifier_head(
         with mlflow.start_run(run_name="gguf_classifier_head_training"):
             mlflow.set_tag("project_stage", "refactored_pipeline")
             mlflow.set_tag("pipeline_stage", STAGE_NAME)
-            mlflow.log_param("head_model_type", "standard_scaler_logistic_regression")
+            mlflow.log_param("head_model_type", "standard_scaler_mlp_classifier_256_128")
             mlflow.log_param("embedding_model_path", gguf_model_path)
             mlflow.log_param("head_train_data", train_data)
             mlflow.log_metric("head_train_rows", len(train_df))
