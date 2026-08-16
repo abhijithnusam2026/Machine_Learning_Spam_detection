@@ -70,3 +70,4 @@ tensorboard/
 kubeconfig*
 *.pptx
 *.csv
+llama.cpp/
