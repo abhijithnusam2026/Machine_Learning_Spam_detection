@@ -60,7 +60,7 @@ def select_best_pipeline():
     whisper_paths = {
         "fp16": "openai/whisper-tiny.en",
         "q8_0": "models/ggml_whisper/whisper_q8_0.bin",
-        "q4_k": "models/ggml_whisper/whisper_q4_k.bin",
+        "q5_1": "models/ggml_whisper/whisper_q5_1.bin",
     }
 
     if clf in classifier_paths:
