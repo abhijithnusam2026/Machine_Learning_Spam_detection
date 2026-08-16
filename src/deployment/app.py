@@ -14,12 +14,22 @@ print("Initializing configured inference pipeline...")
 import importlib
 infer_module = importlib.import_module("src.evaluation.inference_pipeline")
 InferencePipeline = infer_module.InferencePipeline
-pipeline = InferencePipeline()
-backend_label = f"ASR={pipeline.asr_backend.upper()} | Classifier={pipeline.clf_backend.upper()}"
+pipeline = None
+pipeline_error = None
+try:
+    pipeline = InferencePipeline()
+    backend_label = f"ASR={pipeline.asr_backend.upper()} | Classifier={pipeline.clf_backend.upper()}"
+except Exception as exc:
+    pipeline_error = exc
+    backend_label = f"Initialization failed: {exc}"
+    print(f"[STARTUP ERROR] Failed to initialize inference pipeline: {exc}", flush=True)
 
 def process_audio(audio_file_path):
     if not audio_file_path:
         return "No audio provided.", "N/A", "N/A"
+
+    if pipeline is None:
+        return f"Pipeline initialization failed: {pipeline_error}", "Error", "Error"
         
     try:
         # Run inference using the CPU GGUF pipeline + Logistic Regression head

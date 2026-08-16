@@ -151,8 +151,30 @@ class InferencePipeline:
 
     def _download_model_artifact(self, local_path, remote_prefixes):
         filename = os.path.basename(local_path)
-        remote_paths = [local_path] + [f"{prefix}/{filename}" for prefix in remote_prefixes]
+        remote_paths = [f"{prefix}/{filename}" for prefix in remote_prefixes] + [local_path]
         self._download_from_dagshub_any(remote_paths, local_path)
+
+    def _is_valid_downloaded_artifact(self, local_path):
+        if not os.path.exists(local_path):
+            return False
+
+        size_bytes = os.path.getsize(local_path)
+        if size_bytes < 1024:
+            return False
+
+        if local_path.endswith(".gguf"):
+            with open(local_path, "rb") as f:
+                return f.read(4) == b"GGUF"
+
+        if local_path.endswith(".bin"):
+            # whisper.cpp GGML binaries begin with a GGML/GGMF/GGJT magic or
+            # equivalent little-endian integer. Size catches pointer/html files.
+            return size_bytes > 1_000_000
+
+        if local_path.endswith(".joblib"):
+            return size_bytes > 1024
+
+        return True
 
     def _download_from_dagshub_any(self, remote_paths, local_path):
         import dagshub
@@ -171,7 +193,18 @@ class InferencePipeline:
         for remote_path in remote_paths:
             try:
                 s3.download_file(name, remote_path, local_path)
-                return
+                if self._is_valid_downloaded_artifact(local_path):
+                    print(
+                        f"Downloaded {remote_path} -> {local_path} "
+                        f"({os.path.getsize(local_path) / (1024 * 1024):.2f} MB)",
+                        flush=True,
+                    )
+                    return
+                last_error = RuntimeError(f"Downloaded invalid artifact from {remote_path}")
+                try:
+                    os.remove(local_path)
+                except OSError:
+                    pass
             except Exception as exc:
                 last_error = exc
         raise FileNotFoundError(
