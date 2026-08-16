@@ -15,6 +15,42 @@ from dotenv import load_dotenv
 from src.utils.data_access import ensure_audio_holdout
 from src.utils.mlflow_reporting import log_benchmark_plots, log_dataframe_artifact
 
+def _download_from_dagshub(remote_path, local_path):
+    load_dotenv()
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME")
+    token = os.getenv("MLFLOW_TRACKING_PASSWORD")
+    if not (repo_owner and repo_name and token):
+        return False
+
+    try:
+        dagshub.auth.add_app_token(token)
+        s3_client = dagshub.get_repo_bucket_client(f"{repo_owner}/{repo_name}")
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        s3_client.download_file(repo_name, remote_path, local_path)
+        print(f"Downloaded {remote_path} -> {local_path}")
+        return True
+    except Exception as exc:
+        print(f"[WARN] Could not download {remote_path}: {exc}")
+        return False
+
+def ensure_whisper_model(path):
+    if os.path.exists(path):
+        return True
+
+    filename = os.path.basename(path)
+    remote_prefixes = [
+        "artifacts/refactored_pipeline/06_ptq_modernbert/ggml",
+        "artifacts/06_ptq_modernbert/ggml",
+        "models/ggml_whisper",
+        "artifacts/feature/phase-2-audio-asr/ggml",
+    ]
+    for prefix in remote_prefixes:
+        if _download_from_dagshub(f"{prefix}/{filename}", path):
+            return True
+
+    return False
+
 def get_whisper_model_path(variant):
     # Depending on what we exported in 06, we might have these variants
     paths = {
@@ -84,7 +120,7 @@ def evaluate_whisper():
 
     for variant in variants:
         path = get_whisper_model_path(variant)
-        if not path or not os.path.exists(path):
+        if not path or not ensure_whisper_model(path):
             print(f"Variant {variant} not found at {path}. Skipping.")
             continue
             

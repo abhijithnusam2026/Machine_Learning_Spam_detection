@@ -82,6 +82,7 @@ def ensure_gguf_classifier_head(local_path="models/gguf/gguf_classifier_head.job
         local_path,
         f"artifacts/refactored_pipeline/{STAGE_NAME}/gguf/gguf_classifier_head.joblib",
         f"artifacts/{STAGE_NAME}/gguf/gguf_classifier_head.joblib",
+        "models/gguf/gguf_classifier_head.joblib",
         "artifacts/feature/phase-2-audio-asr/gguf/gguf_classifier_head.joblib",
         "artifacts/feature/phase-3.5-benchmark/gguf_classifier_head.joblib",
         "artifacts/feature/phase-3.5-benchmark/gguf/gguf_classifier_head.joblib",
@@ -105,7 +106,7 @@ def mean_pool_llama_embedding(raw_embedding):
 def train_gguf_classifier_head(
     gguf_model_path,
     train_data="data/processed/global_train.csv",
-    train_rows=512,
+    train_rows=5000,
     output_path="models/gguf/gguf_classifier_head.joblib",
 ):
     print("\n--- Training GGUF Classification Head ---")
@@ -161,6 +162,7 @@ def train_gguf_classifier_head(
     joblib.dump(head, output_path)
     print(f"[SUCCESS] Trained GGUF classifier head: {output_path}")
     upload_to_dagshub(output_path, f"artifacts/{STAGE_NAME}/gguf/{os.path.basename(output_path)}", STAGE_NAME)
+    upload_to_dagshub(output_path, output_path, STAGE_NAME)
 
     load_dotenv()
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
@@ -197,6 +199,8 @@ def export_classifier_to_gguf(model_name="./scam-classifier-model", output_dir="
     remote_prefixes = [
         f"artifacts/refactored_pipeline/{stage}/gguf",
         f"artifacts/{stage}/gguf",
+        "models/gguf_classifier",
+        "artifacts/feature/phase-2-audio-asr/gguf",
     ]
     fetched_all = True
     for filename, local_path in required_models.items():
@@ -297,7 +301,7 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     required_models = {
         "whisper_f16.bin": os.path.join(output_dir, "whisper_f16.bin"),
         "whisper_q8_0.bin": os.path.join(output_dir, "whisper_q8_0.bin"),
-        "whisper_q4_k.bin": os.path.join(output_dir, "whisper_q4_k.bin"),
+        "whisper_q5_1.bin": os.path.join(output_dir, "whisper_q5_1.bin"),
     }
     if all(os.path.exists(path) for path in required_models.values()):
         print("Whisper GGML artifacts already exist locally. Skipping export.")
@@ -306,6 +310,7 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
     remote_prefixes = [
         f"artifacts/refactored_pipeline/{stage}/ggml",
         f"artifacts/{stage}/ggml",
+        "models/ggml_whisper",
         "artifacts/feature/phase-2-audio-asr/ggml",
     ]
     fetched_all = True
@@ -792,7 +797,7 @@ if __name__ == "__main__":
     parser.add_argument("--gguf_eval_data", type=str, default="data/processed/global_test.csv")
     parser.add_argument("--gguf_eval_rows", type=int, default=512)
     parser.add_argument("--gguf_head_train_data", type=str, default="data/processed/global_train.csv")
-    parser.add_argument("--gguf_head_train_rows", type=int, default=512)
+    parser.add_argument("--gguf_head_train_rows", type=int, default=5000)
     parser.add_argument("--onnx_eval_data", type=str, default="data/processed/global_test.csv")
     parser.add_argument("--onnx_output_dir", type=str, default="models/onnx_modernbert")
     parser.add_argument("--onnx_max_length", type=int, default=512)

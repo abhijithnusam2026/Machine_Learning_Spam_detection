@@ -73,7 +73,15 @@ class InferencePipeline:
         model_path = self.config['classifier_model_path']
         if not os.path.exists(model_path):
             print(f"Downloading {model_path} from DagsHub...")
-            self._download_from_dagshub(model_path)
+            self._download_model_artifact(
+                model_path,
+                [
+                    "artifacts/refactored_pipeline/06_ptq_modernbert/gguf",
+                    "artifacts/06_ptq_modernbert/gguf",
+                    "models/gguf_classifier",
+                    "artifacts/feature/phase-2-audio-asr/gguf",
+                ],
+            )
             
         print(f"Loading GGUF Classifier: {model_path}")
         self.llm = Llama(model_path=model_path, verbose=False, embedding=True, n_ctx=1024)
@@ -86,7 +94,9 @@ class InferencePipeline:
             self._download_from_dagshub_any(
                 [
                     head_path,
+                    "artifacts/refactored_pipeline/06_ptq_modernbert/gguf/gguf_classifier_head.joblib",
                     "artifacts/06_ptq_modernbert/gguf/gguf_classifier_head.joblib",
+                    "models/gguf/gguf_classifier_head.joblib",
                     "artifacts/feature/phase-2-audio-asr/gguf/gguf_classifier_head.joblib",
                     "artifacts/feature/phase-3.5-benchmark/gguf_classifier_head.joblib",
                     "artifacts/feature/phase-3.5-benchmark/gguf/gguf_classifier_head.joblib",
@@ -107,7 +117,15 @@ class InferencePipeline:
         self.whisper_model_path = self.config['asr_model_path']
         if not os.path.exists(self.whisper_model_path):
             print(f"Downloading {self.whisper_model_path} from DagsHub...")
-            self._download_from_dagshub(self.whisper_model_path)
+            self._download_model_artifact(
+                self.whisper_model_path,
+                [
+                    "artifacts/refactored_pipeline/06_ptq_modernbert/ggml",
+                    "artifacts/06_ptq_modernbert/ggml",
+                    "models/ggml_whisper",
+                    "artifacts/feature/phase-2-audio-asr/ggml",
+                ],
+            )
             
         # Ensure whisper.cpp is compiled
         if not os.path.exists("./whisper.cpp/main"):
@@ -130,6 +148,11 @@ class InferencePipeline:
         s3 = dagshub.get_repo_bucket_client(f"{owner}/{name}")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         s3.download_file(name, file_path, file_path)
+
+    def _download_model_artifact(self, local_path, remote_prefixes):
+        filename = os.path.basename(local_path)
+        remote_paths = [local_path] + [f"{prefix}/{filename}" for prefix in remote_prefixes]
+        self._download_from_dagshub_any(remote_paths, local_path)
 
     def _download_from_dagshub_any(self, remote_paths, local_path):
         import dagshub

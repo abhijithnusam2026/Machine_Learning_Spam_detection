@@ -100,14 +100,6 @@ def evaluate_combinations():
         else:
             config["asr_model_path"] = whisper_paths[asr]
             
-        if not os.path.exists(config.get("classifier_model_path", "")) and clf != "fp16":
-            print(f"Classifier path {config.get('classifier_model_path')} not found. Skipping combo.")
-            continue
-            
-        if not os.path.exists(config.get("asr_model_path", "")) and asr != "fp16":
-            print(f"ASR path {config.get('asr_model_path')} not found. Skipping combo.")
-            continue
-
         try:
             pipeline = InferencePipeline(config)
         except Exception as e:
