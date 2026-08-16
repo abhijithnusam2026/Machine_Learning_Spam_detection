@@ -68,3 +68,5 @@ tensorboard/
 # Docker/Kubernetes local state
 .docker/
 kubeconfig*
+*.pptx
+*.csv
