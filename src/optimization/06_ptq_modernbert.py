@@ -38,6 +38,9 @@ def run_cmd(cmd, cwd=None):
     subprocess.run(cmd, check=True, cwd=cwd)
 
 def upload_to_dagshub(local_path, remote_path, stage):
+    if remote_path.startswith("artifacts/") and not remote_path.startswith("artifacts/refactored_pipeline/"):
+        remote_path = remote_path.replace("artifacts/", "artifacts/refactored_pipeline/")
+        
     load_dotenv()
     repo_owner = os.getenv("DAGSHUB_REPO_OWNER")
     repo_name = os.getenv("DAGSHUB_REPO_NAME")
@@ -77,6 +80,7 @@ def ensure_gguf_classifier_head(local_path="models/gguf/gguf_classifier_head.job
 
     remote_candidates = [
         local_path,
+        f"artifacts/refactored_pipeline/{STAGE_NAME}/gguf/gguf_classifier_head.joblib",
         f"artifacts/{STAGE_NAME}/gguf/gguf_classifier_head.joblib",
         "artifacts/feature/phase-2-audio-asr/gguf/gguf_classifier_head.joblib",
         "artifacts/feature/phase-3.5-benchmark/gguf_classifier_head.joblib",
@@ -256,6 +260,7 @@ def export_whisper_to_ggml(model_name="openai/whisper-tiny", output_dir="models/
         return
 
     remote_prefixes = [
+        f"artifacts/refactored_pipeline/{stage}/ggml",
         f"artifacts/{stage}/ggml",
         "artifacts/feature/phase-2-audio-asr/ggml",
     ]
