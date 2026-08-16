@@ -2,6 +2,11 @@ name: Sync to Hugging Face Hub
 
 on:
   workflow_dispatch:
+    inputs:
+      huggingface_repo_id:
+        description: "Target Hugging Face Space repo, for example tanu011235/ml_project_q8_staging"
+        required: true
+        default: "tanu011235/ml_project_q8_staging"
 
 jobs:
   sync:
@@ -14,5 +19,5 @@ jobs:
       - uses: huggingface/hub-sync@v0.1.0
         with:
           github_repo_id: ${{ github.repository }}
-          huggingface_repo_id: tanu011235/ml_project
+          huggingface_repo_id: ${{ inputs.huggingface_repo_id }}
           hf_token: ${{ secrets.HF_TOKEN }}
