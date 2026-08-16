@@ -8,6 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
+    cmake \
     make \
     g++ \
     && rm -rf /var/lib/apt/lists/*
@@ -25,7 +26,7 @@ RUN uv pip install --system --force-reinstall torch==2.4.0 --index-url https://d
 
 # Ensure the whisper.cpp binary is built
 RUN if [ ! -d "whisper.cpp" ]; then git clone https://github.com/ggerganov/whisper.cpp.git; fi
-RUN cd whisper.cpp && make
+RUN cd whisper.cpp && cmake -B build && cmake --build build --config Release -j
 
 # Pre-download models if needed, or allow pipeline to pull from DagsHub at boot
 # Note: DagsHub secrets (MLFLOW_TRACKING_PASSWORD, etc.) must be set in HF Spaces Secret settings.

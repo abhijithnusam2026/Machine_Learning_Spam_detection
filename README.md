@@ -3,10 +3,8 @@ title: Scam Detection AI
 emoji: 🛡️
 colorFrom: blue
 colorTo: purple
-sdk: gradio
-sdk_version: "4.44.1"
-python_version: 3.10.13
-app_file: src/deployment/app.py
+sdk: docker
+app_port: 7860
 pinned: false
 ---
 
