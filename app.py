@@ -5,8 +5,10 @@ Spaces expect a root-level app.py. Keep this thin wrapper so both deployment
 modes use the same refactored implementation.
 """
 
+import os
+
 from src.deployment.app import demo
 
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))

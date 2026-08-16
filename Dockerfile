@@ -25,7 +25,7 @@ RUN uv pip install --system -r requirements.txt
 RUN uv pip install --system --force-reinstall torch==2.4.0 --index-url https://download.pytorch.org/whl/cpu
 
 # Ensure the whisper.cpp binary is built
-RUN if [ ! -d "whisper.cpp" ]; then git clone https://github.com/ggerganov/whisper.cpp.git; fi
+RUN if [ ! -d "whisper.cpp" ]; then git clone https://github.com/ggml-org/whisper.cpp.git; fi
 RUN cd whisper.cpp && cmake -B build && cmake --build build --config Release -j
 
 # Pre-download models if needed, or allow pipeline to pull from DagsHub at boot
@@ -35,4 +35,4 @@ RUN cd whisper.cpp && cmake -B build && cmake --build build --config Release -j
 EXPOSE 7860
 
 # Run the FastAPI server
-CMD ["uvicorn", "src.deployment.api_server:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "src.deployment.api_server:app", "--host", "0.0.0.0", "--port", "7860", "--ws-ping-interval", "20", "--ws-ping-timeout", "20"]

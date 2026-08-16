@@ -1,0 +1,50 @@
+# Version control
+.git/
+.github/
+
+# Virtual environments
+.venv/
+venv/
+venv3_12/
+
+# whisper.cpp is cloned and built fresh inside the image (see Dockerfile).
+# A locally-built copy carries a CMakeCache.txt with host-machine absolute
+# paths baked in, which breaks `cmake -B build` when reused from a
+# different path (e.g. /app) inside the container.
+whisper.cpp/
+
+# Models/data are downloaded from DagsHub at boot (see InferencePipeline);
+# no need to ship local copies into the image.
+models/
+data/**
+!data/.gitkeep
+artifacts/
+scam-classifier-model/
+
+# Env/secrets -- never bake these into an image
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE/OS
+.idea/
+.vscode/
+.DS_Store
+
+# Notebooks/docs not needed at runtime
+notebooks/
+docs/
+*.ipynb_checkpoints/
+
+# Logs
+*.log
+logs/

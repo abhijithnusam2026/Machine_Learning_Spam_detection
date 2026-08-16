@@ -21,5 +21,6 @@ datasets==2.20.0
 safetensors==0.4.3
 huggingface_hub==0.24.5
 joblib==1.4.2
-pywhispercpp==1.2.0
 python-multipart==0.0.9
+websockets==12.0
+soundfile==0.12.1

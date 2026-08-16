@@ -1,9 +1,24 @@
 import os
 import json
+import subprocess
+import tempfile
 import time
 import numpy as np
 
 class InferencePipeline:
+    # Modern (CMake) whisper.cpp builds put the CLI under build/bin/; older
+    # `make`-based builds put it at the repo root. Check every location so
+    # an image that already compiled it during a Docker build step isn't
+    # rebuilt on every cold start.
+    WHISPER_BIN_PATHS = [
+        "./whisper.cpp/build/bin/whisper-cli",
+        "./whisper.cpp/build/bin/main",
+        "./whisper.cpp/bin/whisper-cli",
+        "./whisper.cpp/bin/main",
+        "./whisper.cpp/whisper-cli",
+        "./whisper.cpp/main",
+    ]
+
     def __init__(self, config_path_or_dict="configs/inference_config.json"):
         if isinstance(config_path_or_dict, dict):
             self.config = config_path_or_dict
@@ -121,26 +136,34 @@ class InferencePipeline:
                 ],
             )
 
-        try:
-            from pywhispercpp.model import Model
-        except ImportError as exc:
-            raise RuntimeError(
-                "GGUF/GGML ASR requires pywhispercpp in the Hugging Face runtime. "
-                "Install pywhispercpp==1.2.0 or use the Docker build."
-            ) from exc
+        # ASR runs via the whisper.cpp CLI over subprocess rather than the
+        # pywhispercpp Python bindings: pywhispercpp's PyPI sdist doesn't
+        # vendor whisper.cpp's own sources (no ggml.h), so it cannot be
+        # built from source on Linux at all -- only a prebuilt macOS wheel
+        # exists. Building whisper.cpp itself (this is the real, actively
+        # maintained project) works identically on every platform.
+        if self._find_whisper_binary() is None:
+            print("whisper.cpp not compiled. Building now...", flush=True)
+            if not os.path.exists("./whisper.cpp"):
+                subprocess.run(
+                    ["git", "clone", "https://github.com/ggml-org/whisper.cpp.git"],
+                    check=True,
+                )
+            subprocess.run(
+                ["cmake", "-B", "build"], cwd="./whisper.cpp", check=True
+            )
+            subprocess.run(
+                ["cmake", "--build", "build", "--config", "Release", "-j"],
+                cwd="./whisper.cpp",
+                check=True,
+            )
+        print(f"Using whisper.cpp CLI: {self._find_whisper_binary()}", flush=True)
 
-        n_threads = max(1, min(os.cpu_count() or 2, 4))
-        print(
-            f"Loading GGML Whisper ASR via pywhispercpp: {self.whisper_model_path} "
-            f"({n_threads} thread(s))",
-            flush=True,
-        )
-        self.whisper_model = Model(
-            self.whisper_model_path,
-            n_threads=n_threads,
-            print_realtime=False,
-            print_progress=False,
-        )
+    def _find_whisper_binary(self):
+        for p in self.WHISPER_BIN_PATHS:
+            if os.path.exists(p):
+                return p
+        return None
 
     def _download_from_dagshub(self, file_path):
         import boto3
@@ -242,27 +265,93 @@ class InferencePipeline:
             "metrics": metrics
         }
 
-    def _transcribe(self, audio_file):
+    def classify(self, text):
+        """Public wrapper so callers (e.g. the live-monitor UI/API) can
+        classify arbitrary/cumulative text without reaching into _classify."""
+        return self._classify(text)
+
+    def transcribe_chunk(self, sr, audio_array):
+        """Transcribe a raw in-memory audio chunk (e.g. a live-mic window).
+
+        audio_array: 1-D numpy array (int16 or float) at sample rate `sr`.
+        Writes it to a temp wav and reuses the normal file-based ASR path.
+        """
+        import soundfile as sf
+
+        audio_array = np.asarray(audio_array)
+        if audio_array.dtype.kind == "f":
+            # float samples are expected in [-1, 1]
+            audio_array = np.clip(audio_array, -1.0, 1.0)
+        elif audio_array.dtype != np.int16:
+            audio_array = audio_array.astype(np.int16)
+
+        temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        try:
+            sf.write(temp_wav, audio_array, sr, subtype="PCM_16")
+            # A silent window is expected during normal call pauses, unlike a
+            # fully silent uploaded recording -- don't raise for it here.
+            return self._transcribe(temp_wav, allow_empty=True)
+        finally:
+            try:
+                os.remove(temp_wav)
+            except OSError:
+                pass
+
+    def _transcribe(self, audio_file, allow_empty=False):
         if self.asr_backend == "fp16":
             result = self.asr_pipe(audio_file)
             return result["text"].strip()
         else:
-            segments = self.whisper_model.transcribe(audio_file, new_segment_callback=None)
-            transcript_parts = []
-            for segment in segments:
-                text = getattr(segment, "text", None)
-                if text is None and isinstance(segment, dict):
-                    text = segment.get("text")
-                if text:
-                    transcript_parts.append(str(text).strip())
-            transcript = " ".join(transcript_parts).strip()
+            # whisper.cpp's CLI only accepts 16kHz mono PCM WAV -- re-encode
+            # whatever format we were handed (mp3, webm/opus mic chunks, etc.)
+            temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+            try:
+                ffmpeg_result = subprocess.run(
+                    ["ffmpeg", "-y", "-i", audio_file,
+                     "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", temp_wav],
+                    capture_output=True, text=True,
+                )
+                if ffmpeg_result.returncode != 0:
+                    raise RuntimeError(f"ffmpeg audio conversion failed: {ffmpeg_result.stderr[-1000:]}")
 
-            if not transcript:
-                error_msg = "Whisper ASR returned an empty transcript."
-                print(f"[ASR ERROR] {error_msg}", flush=True)
-                raise RuntimeError(error_msg)
+                whisper_bin = self._find_whisper_binary()
+                if not whisper_bin:
+                    raise FileNotFoundError("Could not locate compiled whisper-cli/main binary in whisper.cpp/")
 
-            return transcript
+                out_base = tempfile.NamedTemporaryFile(prefix="whisper_transcript_", delete=True).name
+                out_txt = f"{out_base}.txt"
+                cmd = [
+                    whisper_bin,
+                    "-m", self.whisper_model_path,
+                    "-f", temp_wav,
+                    "-nt",
+                    "-otxt",
+                    "-of", out_base,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+
+                transcript = ""
+                if os.path.exists(out_txt):
+                    with open(out_txt, "r", encoding="utf-8") as f:
+                        transcript = f.read().strip()
+                    os.remove(out_txt)
+                if not transcript:
+                    transcript = result.stdout.strip()
+
+                if result.returncode != 0:
+                    raise RuntimeError(f"whisper.cpp failed: {result.stderr[-1500:]}")
+
+                if not transcript and not allow_empty:
+                    error_msg = "Whisper ASR returned an empty transcript."
+                    print(f"[ASR ERROR] {error_msg}", flush=True)
+                    raise RuntimeError(error_msg)
+
+                return transcript
+            finally:
+                try:
+                    os.remove(temp_wav)
+                except OSError:
+                    pass
 
     def _classify(self, text):
         if self.clf_backend == "fp16":

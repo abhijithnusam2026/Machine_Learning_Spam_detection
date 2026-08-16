@@ -74,20 +74,88 @@
             transition: 0.3s;
         }
         .reset-btn:hover { background-color: #2563eb; }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            background-color: #0f172a;
+            color: #94a3b8;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .tab-btn.active { background-color: #3b82f6; color: white; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .mic-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        .mic-btn.start { background-color: #22c55e; color: white; }
+        .mic-btn.start:hover { background-color: #16a34a; }
+        .mic-btn.stop { background-color: #ef4444; color: white; }
+        .mic-btn.stop:hover { background-color: #dc2626; }
+        .live-transcript {
+            background-color: #0f172a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: left;
+            min-height: 80px;
+            color: #cbd5e1;
+        }
+        .live-alert {
+            margin-top: 15px;
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 1.15rem;
+            font-weight: bold;
+            background-color: #374151;
+            color: white;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Voice Scam Detector</h1>
-        <div class="upload-area" id="dropzone" onclick="document.getElementById('audio-upload').click()">
-            <p>Click to Upload Audio (.wav)</p>
-            <input type="file" id="audio-upload" accept=".wav" style="display: none;">
+
+        <div class="tabs">
+            <button class="tab-btn active" id="tab-upload-btn" onclick="switchTab('upload')">Upload a Recording</button>
+            <button class="tab-btn" id="tab-live-btn" onclick="switchTab('live')">Live Call Monitor</button>
         </div>
-        
-        <div class="status" id="status-text"></div>
-        <div class="transcript-box" id="transcript">Waiting for audio...</div>
-        <div class="result-box" id="result"></div>
-        <button class="reset-btn" id="reset-btn" onclick="location.reload()">Upload Another File</button>
+
+        <div class="tab-panel active" id="tab-upload">
+            <div class="upload-area" id="dropzone" onclick="document.getElementById('audio-upload').click()">
+                <p>Click to Upload Audio (.wav)</p>
+                <input type="file" id="audio-upload" accept=".wav" style="display: none;">
+            </div>
+
+            <div class="status" id="status-text"></div>
+            <div class="transcript-box" id="transcript">Waiting for audio...</div>
+            <div class="result-box" id="result"></div>
+            <button class="reset-btn" id="reset-btn" onclick="location.reload()">Upload Another File</button>
+        </div>
+
+        <div class="tab-panel" id="tab-live">
+            <p style="color: #94a3b8; margin-bottom: 15px;">
+                Every 3 seconds of audio is transcribed and appended to the running
+                transcript, which is re-checked for scam intent as the call continues.
+            </p>
+            <button class="mic-btn start" id="live-toggle-btn" onclick="toggleLive()">Start Listening</button>
+            <div class="live-alert" id="live-alert">🎙️ Not listening</div>
+            <div class="live-transcript" id="live-transcript">(transcript will appear here)</div>
+            <div class="status" id="live-status"></div>
+        </div>
     </div>
 
     <script>
@@ -176,6 +244,156 @@
                 status.style.color = "red";
             }
         });
+
+        // ---- Tabs ----
+        function switchTab(name) {
+            document.getElementById('tab-upload').classList.toggle('active', name === 'upload');
+            document.getElementById('tab-live').classList.toggle('active', name === 'live');
+            document.getElementById('tab-upload-btn').classList.toggle('active', name === 'upload');
+            document.getElementById('tab-live-btn').classList.toggle('active', name === 'live');
+            if (name !== 'live' && isLive) stopLive();
+        }
+
+        // ---- Live call monitor (3-second sliding window over WebSocket) ----
+        const LIVE_WINDOW_MS = 3000;
+        let mediaStream = null;
+        let mediaRecorder = null;
+        let liveSocket = null;
+        let isLive = false;
+
+        function renderLiveAlert(prediction) {
+            const alertBox = document.getElementById('live-alert');
+            if (!prediction) {
+                alertBox.style.backgroundColor = '#374151';
+                alertBox.innerText = '🎙️ Waiting for speech...';
+                return;
+            }
+            if (prediction.toLowerCase().startsWith('scam')) {
+                alertBox.style.backgroundColor = '#dc2626';
+                alertBox.innerText = '🚨 SCAM ALERT — ' + prediction;
+            } else {
+                alertBox.style.backgroundColor = '#16a34a';
+                alertBox.innerText = '✅ ' + prediction;
+            }
+        }
+
+        function openLiveSocket() {
+            return new Promise((resolve, reject) => {
+                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const socket = new WebSocket(`${proto}//${location.host}/ws/live`);
+                socket.binaryType = 'arraybuffer';
+
+                socket.onopen = () => resolve(socket);
+                socket.onerror = (err) => reject(err);
+
+                socket.onmessage = (event) => {
+                    const liveStatus = document.getElementById('live-status');
+                    const liveTranscript = document.getElementById('live-transcript');
+                    let data;
+                    try {
+                        data = JSON.parse(event.data);
+                    } catch (e) {
+                        console.error('Bad message from live socket:', e);
+                        return;
+                    }
+                    if (data.type === 'error') {
+                        liveStatus.innerText = 'Error: ' + data.error;
+                        return;
+                    }
+                    if (data.type !== 'result') return;
+                    liveTranscript.innerText = data.transcript || '(listening...)';
+                    renderLiveAlert(data.prediction);
+                    liveStatus.innerText = `ASR: ${data.asr_latency.toFixed(2)}s | Classifier: ${data.clf_latency.toFixed(2)}s`;
+                };
+
+                socket.onclose = () => {
+                    if (isLive) {
+                        document.getElementById('live-status').innerText = 'Connection lost.';
+                        stopLive();
+                    }
+                };
+            });
+        }
+
+        function sendLiveChunk(blob) {
+            if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
+                // A dropped window is recoverable (next 3s chunk is on the way) -- log it
+                // instead of overwriting the live status with a scary one-off network error.
+                console.warn('Live socket not open, dropping this window.');
+                return;
+            }
+            blob.arrayBuffer().then((buf) => liveSocket.send(buf));
+        }
+
+        function recordCycle() {
+            if (!isLive || !mediaStream) return;
+            const chunks = [];
+            mediaRecorder = new MediaRecorder(mediaStream);
+            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+            mediaRecorder.onstop = async () => {
+                if (chunks.length > 0) {
+                    const blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                    await sendLiveChunk(blob);
+                }
+                recordCycle(); // start the next window
+            };
+            mediaRecorder.start();
+            setTimeout(() => {
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            }, LIVE_WINDOW_MS);
+        }
+
+        async function toggleLive() {
+            if (isLive) {
+                stopLive();
+                return;
+            }
+            const btn = document.getElementById('live-toggle-btn');
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (err) {
+                document.getElementById('live-status').innerText = 'Microphone access denied: ' + err.message;
+                return;
+            }
+
+            document.getElementById('live-status').innerText = 'Connecting...';
+            try {
+                liveSocket = await openLiveSocket();
+            } catch (err) {
+                document.getElementById('live-status').innerText = 'Could not connect to live monitor.';
+                mediaStream.getTracks().forEach((t) => t.stop());
+                mediaStream = null;
+                return;
+            }
+
+            isLive = true;
+            btn.innerText = 'Stop Listening';
+            btn.className = 'mic-btn stop';
+            document.getElementById('live-transcript').innerText = '(listening...)';
+            renderLiveAlert(null);
+            document.getElementById('live-status').innerText = '';
+            recordCycle();
+        }
+
+        function stopLive() {
+            isLive = false;
+            const btn = document.getElementById('live-toggle-btn');
+            btn.innerText = 'Start Listening';
+            btn.className = 'mic-btn start';
+
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            if (mediaStream) {
+                mediaStream.getTracks().forEach((t) => t.stop());
+                mediaStream = null;
+            }
+            if (liveSocket) {
+                if (liveSocket.readyState === WebSocket.OPEN) {
+                    liveSocket.send(JSON.stringify({ type: 'reset' }));
+                }
+                liveSocket.close();
+                liveSocket = null;
+            }
+        }
     </script>
 </body>
 </html>
