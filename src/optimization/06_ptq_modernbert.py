@@ -133,12 +133,35 @@ def train_gguf_classifier_head(
     from sklearn.preprocessing import StandardScaler
     import joblib
 
-    llm = Llama(model_path=gguf_model_path, verbose=False, embedding=True)
+    n_threads = max(1, (os.cpu_count() or 2) - 1)
+    print(
+        f"Extracting GGUF embeddings for {len(train_df)} training rows "
+        f"using {n_threads} CPU thread(s)...",
+        flush=True,
+    )
+    llm = Llama(
+        model_path=gguf_model_path,
+        verbose=False,
+        embedding=True,
+        n_ctx=1024,
+        n_batch=512,
+        n_threads=n_threads,
+    )
     embeddings = []
     labels = []
-    for _, row in train_df.iterrows():
+    embed_start = time.time()
+    for idx, (_, row) in enumerate(train_df.iterrows(), start=1):
         embeddings.append(mean_pool_llama_embedding(llm.embed(str(row["text"])[:5000])))
         labels.append(int(row["label"]))
+        if idx == 1 or idx % 50 == 0 or idx == len(train_df):
+            elapsed = time.time() - embed_start
+            rows_per_sec = idx / elapsed if elapsed else 0
+            remaining = (len(train_df) - idx) / rows_per_sec if rows_per_sec else 0
+            print(
+                f"Embedded {idx}/{len(train_df)} rows "
+                f"({rows_per_sec:.2f} rows/s, ETA {remaining / 60:.1f} min)",
+                flush=True,
+            )
 
     head = make_pipeline(
         StandardScaler(),
@@ -155,7 +178,7 @@ def train_gguf_classifier_head(
             random_state=42
         )
     )
-    print("Fitting MLP Neural Network head...")
+    print("Fitting MLP Neural Network head...", flush=True)
     head.fit(embeddings, labels)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
